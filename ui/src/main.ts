@@ -10,6 +10,11 @@ interface PlacedIndividual {
   biological_sex: string | null;
 }
 
+interface PlacedRelationship {
+  id: string;
+  members: string[];
+}
+
 // --- DOM ---
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -38,6 +43,7 @@ const SHAPE_TO_SEX: Record<string, string> = {
 
 let pedigreeId: string | null = null;
 let individuals: PlacedIndividual[] = [];
+let relationships: PlacedRelationship[] = [];
 let drawing = false;
 let points: Point[] = [];
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -48,6 +54,10 @@ let groupDragOffsets: Map<string, { dx: number; dy: number }> = new Map();
 
 // Selection state (lasso)
 let selectedIds: Set<string> = new Set();
+
+// Connection drawing state
+let connecting = false;
+let connectSourceId: string | null = null;
 
 // --- Canvas sizing ---
 
@@ -85,11 +95,54 @@ async function init() {
 
 init();
 
+// --- Side hit-test for connection drawing ---
+
+const SIDE_TOLERANCE = 6;
+
+function hitSide(pos: Point): PlacedIndividual | null {
+  for (const ind of individuals) {
+    if (ind.x == null || ind.y == null) continue;
+    const half = SHAPE_SIZE / 2;
+    const leftMid = { x: ind.x - half, y: ind.y };
+    const rightMid = { x: ind.x + half, y: ind.y };
+    if (
+      Math.hypot(pos.x - leftMid.x, pos.y - leftMid.y) <= SIDE_TOLERANCE ||
+      Math.hypot(pos.x - rightMid.x, pos.y - rightMid.y) <= SIDE_TOLERANCE
+    ) {
+      return ind;
+    }
+  }
+  return null;
+}
+
+function hasRelationship(idA: string, idB: string): boolean {
+  return relationships.some(
+    (r) => r.members.includes(idA) && r.members.includes(idB),
+  );
+}
+
 // --- Drawing handlers ---
 
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   const pos = pointerPos(e);
+
+  // Priority 1: Near side of any shape → enter connecting mode
+  const sideHit = hitSide(pos);
+  if (sideHit) {
+    connecting = true;
+    connectSourceId = sideHit.id;
+    drawing = true;
+    points = [pos];
+
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    return;
+  }
 
   // Hit-test existing individuals
   const hitRadius = SHAPE_SIZE / 2 + 4;
@@ -176,6 +229,24 @@ canvas.addEventListener("pointerup", () => {
   if (!drawing) return;
   drawing = false;
 
+  // Connection mode: check if endpoint hits a different individual's side
+  if (connecting) {
+    const sourceId = connectSourceId;
+    connecting = false;
+    connectSourceId = null;
+
+    if (points.length > 0) {
+      const endpoint = points[points.length - 1];
+      const target = hitSide(endpoint);
+      if (target && sourceId && target.id !== sourceId && !hasRelationship(sourceId, target.id)) {
+        handleConnectionEnd(sourceId, target.id);
+      } else {
+        rejectStroke(points);
+      }
+    }
+    return;
+  }
+
   // Check for lasso selection
   if (points.length >= 3) {
     const first = points[0];
@@ -250,15 +321,52 @@ async function handleShapePlaced(biologicalSex: string, x: number, y: number) {
     });
 
     // 3. Refresh full state
-    const detail = await api<{ individuals: PlacedIndividual[] }>(
-      `/api/pedigrees/${pedigreeId}`,
-    );
+    const detail = await api<{
+      individuals: PlacedIndividual[];
+      relationships: PlacedRelationship[];
+    }>(`/api/pedigrees/${pedigreeId}`);
     individuals = detail.individuals;
+    relationships = detail.relationships ?? [];
 
     // 4. Redraw
     render();
   } catch (err) {
     console.error("Failed to place individual:", err);
+  }
+}
+
+// --- Connection completion ---
+
+async function handleConnectionEnd(sourceId: string, targetId: string) {
+  if (!pedigreeId) {
+    console.warn("No pedigree yet — skipping connection");
+    return;
+  }
+
+  try {
+    // 1. Create relationship
+    const rel = await api<{ id: string }>("/api/relationships", {
+      method: "POST",
+      body: JSON.stringify({ members: [sourceId, targetId] }),
+    });
+
+    // 2. Add to pedigree
+    await api(`/api/pedigrees/${pedigreeId}/relationships/${rel.id}`, {
+      method: "POST",
+    });
+
+    // 3. Refresh full state
+    const detail = await api<{
+      individuals: PlacedIndividual[];
+      relationships: PlacedRelationship[];
+    }>(`/api/pedigrees/${pedigreeId}`);
+    individuals = detail.individuals;
+    relationships = detail.relationships ?? [];
+
+    // 4. Redraw
+    render();
+  } catch (err) {
+    console.error("Failed to create relationship:", err);
   }
 }
 
@@ -277,10 +385,12 @@ async function handleGroupDragEnd(movedIndividuals: { id: string; x: number; y: 
 
     // Refresh full state
     if (pedigreeId) {
-      const detail = await api<{ individuals: PlacedIndividual[] }>(
-        `/api/pedigrees/${pedigreeId}`,
-      );
+      const detail = await api<{
+        individuals: PlacedIndividual[];
+        relationships: PlacedRelationship[];
+      }>(`/api/pedigrees/${pedigreeId}`);
       individuals = detail.individuals;
+      relationships = detail.relationships ?? [];
       render();
     }
   } catch (err) {
@@ -321,6 +431,25 @@ function render() {
       ctx.closePath();
     }
 
+    ctx.stroke();
+  }
+
+  // Draw relationship lines
+  for (const rel of relationships) {
+    if (rel.members.length < 2) continue;
+    const a = individuals.find((i) => i.id === rel.members[0]);
+    const b = individuals.find((i) => i.id === rel.members[1]);
+    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null)
+      continue;
+
+    const half = SHAPE_SIZE / 2;
+    const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+
+    ctx.beginPath();
+    ctx.moveTo(left.x + half, left.y);
+    ctx.lineTo(right.x - half, right.y);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 2;
     ctx.stroke();
   }
 }
