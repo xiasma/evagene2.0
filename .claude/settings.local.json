@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(./venv/Scripts/python:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx vite:*)",
+      "Bash(pip install:*)",
+      "Bash(netstat:*)",
+      "Bash(wmic process:*)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

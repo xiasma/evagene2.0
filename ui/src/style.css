@@ -1,0 +1,76 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+p {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-bottom: 0.75rem;
+}
+
+#canvas {
+  flex: 1;
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* Debug toast */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  translate: -50% 0;
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #fff;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s;
+}
+
+.toast.hidden {
+  opacity: 0;
+}
+
+.toast.circle {
+  background: #ec4899;
+}
+
+.toast.square {
+  background: #3b82f6;
+}
+
+.toast.diamond {
+  background: #8b5cf6;
+}
+
+.toast.unrecognised {
+  background: #94a3b8;
+}

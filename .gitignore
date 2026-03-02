@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.env
+
+# API
+api/venv/
+api/.venv/
+
+# UI
+ui/node_modules/
+ui/dist/

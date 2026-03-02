@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evagene</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Evagene</h1>
+    <p>Pedigree management</p>
+  </header>
+
+  <div class="grid">
+    <!-- Individuals panel -->
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.5rem">
+        <h2>Individuals</h2>
+        <button class="primary" id="btn-add-individual">+ Add</button>
+      </div>
+      <div id="individuals-list"></div>
+    </div>
+
+    <!-- Relationships panel -->
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.5rem">
+        <h2>Relationships</h2>
+        <button class="primary" id="btn-add-relationship">+ Add</button>
+      </div>
+      <div id="relationships-list"></div>
+    </div>
+  </div>
+
+  <!-- Add Event dialog -->
+  <dialog id="dlg-event">
+    <h3 id="dlg-event-title">Add Event</h3>
+    <form id="form-event" method="dialog">
+      <div class="form-row">
+        <label for="event-type">Type</label>
+        <select id="event-type">
+          <option value="birth">birth</option>
+          <option value="death">death</option>
+          <option value="symptom">symptom</option>
+          <option value="diagnosis">diagnosis</option>
+          <option value="marriage">marriage</option>
+          <option value="divorce">divorce</option>
+          <option value="pregnancy">pregnancy</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="event-date">Date (optional)</label>
+        <input type="date" id="event-date" />
+      </div>
+      <div class="form-row">
+        <label for="event-props">Properties JSON (optional)</label>
+        <input type="text" id="event-props" placeholder='{"key": "value"}' />
+      </div>
+      <input type="hidden" id="event-entity-id" />
+      <div class="btn-row">
+        <button type="button" id="dlg-event-cancel">Cancel</button>
+        <button type="submit" class="primary">Add Event</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add Relationship dialog -->
+  <dialog id="dlg-relationship">
+    <h3>Create Relationship</h3>
+    <form id="form-relationship" method="dialog">
+      <div class="form-row">
+        <label>Select members</label>
+        <div id="rel-member-checkboxes"></div>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="dlg-rel-cancel">Cancel</button>
+        <button type="submit" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add Reference dialog -->
+  <dialog id="dlg-ref">
+    <h3>Add Entity Reference</h3>
+    <form id="form-ref" method="dialog">
+      <div class="form-row">
+        <label for="ref-entity-id">Entity ID</label>
+        <select id="ref-entity-id"></select>
+      </div>
+      <div class="form-row">
+        <label for="ref-entity-type">Entity Type</label>
+        <select id="ref-entity-type">
+          <option value="individual">individual</option>
+          <option value="relationship">relationship</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="ref-role">Role</label>
+        <input type="text" id="ref-role" placeholder="child" required />
+      </div>
+      <input type="hidden" id="ref-event-id" />
+      <div class="btn-row">
+        <button type="button" id="dlg-ref-cancel">Cancel</button>
+        <button type="submit" class="primary">Add Reference</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
