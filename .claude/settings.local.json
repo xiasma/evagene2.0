@@ -12,7 +12,8 @@
       "Bash(pip install:*)",
       "Bash(netstat:*)",
       "Bash(wmic process:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
