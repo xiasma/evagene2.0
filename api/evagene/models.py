@@ -15,6 +15,10 @@ class BiologicalSex(str, Enum):
     female = "female"
     intersex = "intersex"
     unknown = "unknown"
+    ambiguous_male = "ambiguous_male"
+    ambiguous_female = "ambiguous_female"
+    none = "none"
+    other = "other"
 
 
 class IndividualEventType(str, Enum):
@@ -22,6 +26,8 @@ class IndividualEventType(str, Enum):
     death = "death"
     diagnosis = "diagnosis"
     symptom = "symptom"
+    affection = "affection"
+    fertility = "fertility"
 
 
 class RelationshipEventType(str, Enum):
@@ -33,6 +39,53 @@ class RelationshipEventType(str, Enum):
     pregnancy = "pregnancy"
 
 
+class DeathStatus(str, Enum):
+    unknown = "unknown"
+    alive = "alive"
+    dead = "dead"
+    suicide_confirmed = "suicide_confirmed"
+    suicide_unconfirmed = "suicide_unconfirmed"
+    spontaneous_abortion = "spontaneous_abortion"
+    therapeutic_abortion = "therapeutic_abortion"
+    neonatal_death = "neonatal_death"
+    stillborn = "stillborn"
+    lived_one_day = "lived_one_day"
+    pregnancy = "pregnancy"
+    other = "other"
+
+
+class AffectionStatus(str, Enum):
+    unknown = "unknown"
+    clear = "clear"
+    affected = "affected"
+    possible_affection = "possible_affection"
+    heterozygous = "heterozygous"
+    affected_by_hearsay = "affected_by_hearsay"
+    carrier = "carrier"
+    examined = "examined"
+    untested = "untested"
+    immune = "immune"
+    presymptomatic = "presymptomatic"
+    other = "other"
+
+
+class FertilityStatus(str, Enum):
+    unknown = "unknown"
+    fertile = "fertile"
+    infertile = "infertile"
+    infertile_by_choice = "infertile_by_choice"
+    other = "other"
+
+
+class SmokerType(str, Enum):
+    vape = "vape"
+    cigarette = "cigarette"
+    cigar = "cigar"
+    pipe = "pipe"
+    mixed = "mixed"
+    other = "other"
+
+
 # --- Domain models ---
 
 
@@ -42,6 +95,39 @@ class PersonName(BaseModel):
     family: str = ""
     prefix: str = ""
     suffix: str = ""
+
+
+class VCardPhone(BaseModel):
+    value: str = ""
+    types: list[str] = Field(default_factory=list)
+
+
+class VCardEmail(BaseModel):
+    value: str = ""
+    types: list[str] = Field(default_factory=list)
+
+
+class VCardAddress(BaseModel):
+    po_box: str = ""
+    extended: str = ""
+    street: str = ""
+    city: str = ""
+    region: str = ""
+    postal_code: str = ""
+    country: str = ""
+    types: list[str] = Field(default_factory=list)
+
+
+class VCardContact(BaseModel):
+    fn: str = ""
+    n: PersonName = Field(default_factory=PersonName)
+    tel: list[VCardPhone] = Field(default_factory=list)
+    email: list[VCardEmail] = Field(default_factory=list)
+    adr: list[VCardAddress] = Field(default_factory=list)
+    org: str = ""
+    title: str = ""
+    note: str = ""
+    properties: dict = Field(default_factory=dict)
 
 
 class EntityReference(BaseModel):
@@ -67,6 +153,17 @@ class Individual(BaseModel):
     biological_sex: Optional[BiologicalSex] = None
     x: Optional[float] = None
     y: Optional[float] = None
+    notes: str = ""
+    proband: float = Field(default=0.0, ge=0.0, le=360.0)
+    proband_text: str = ""
+    generation: Optional[int] = None
+    contacts: dict[str, VCardContact] = Field(default_factory=dict)
+    consent_to_share: Optional[bool] = None
+    height_mm: Optional[int] = None
+    weight_g: Optional[int] = None
+    alcohol_units_per_week: Optional[float] = None
+    smoker: Optional[SmokerType] = None
+    smoking_per_day: Optional[int] = None
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
 
@@ -75,6 +172,7 @@ class Relationship(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     display_name: str = ""
     members: list[uuid.UUID] = Field(default_factory=list)
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
 
@@ -82,6 +180,7 @@ class Relationship(BaseModel):
 class Egg(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     display_name: str = ""
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
     individual_id: Optional[uuid.UUID] = None  # resulting child
     events: list[Event] = Field(default_factory=list)
@@ -92,6 +191,7 @@ class Pedigree(BaseModel):
     display_name: str = ""
     date_represented: Optional[str] = None  # ISO date
     owner: str = ""
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
     created_at: Optional[str] = None  # ISO datetime, set on creation
@@ -115,6 +215,7 @@ class PedigreeCreate(BaseModel):
     display_name: str = ""
     date_represented: Optional[str] = None
     owner: str = ""
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
 
 
@@ -122,6 +223,7 @@ class PedigreeUpdate(BaseModel):
     display_name: Optional[str] = None
     date_represented: Optional[str] = None
     owner: Optional[str] = None
+    notes: Optional[str] = None
     properties: Optional[dict] = None
 
 
@@ -131,25 +233,50 @@ class IndividualCreate(BaseModel):
     biological_sex: Optional[BiologicalSex] = None
     x: Optional[float] = None
     y: Optional[float] = None
+    notes: str = ""
+    proband: float = Field(default=0.0, ge=0.0, le=360.0)
+    proband_text: str = ""
+    generation: Optional[int] = None
+    contacts: dict[str, VCardContact] = Field(default_factory=dict)
+    consent_to_share: Optional[bool] = None
+    height_mm: Optional[int] = None
+    weight_g: Optional[int] = None
+    alcohol_units_per_week: Optional[float] = None
+    smoker: Optional[SmokerType] = None
+    smoking_per_day: Optional[int] = None
     properties: dict = Field(default_factory=dict)
 
 
 class IndividualUpdate(BaseModel):
     display_name: Optional[str] = None
+    name: Optional[PersonName] = None
     biological_sex: Optional[BiologicalSex] = None
     x: Optional[float] = None
     y: Optional[float] = None
+    notes: Optional[str] = None
+    proband: Optional[float] = Field(default=None, ge=0.0, le=360.0)
+    proband_text: Optional[str] = None
+    generation: Optional[int] = None
+    contacts: Optional[dict[str, VCardContact]] = None
+    consent_to_share: Optional[bool] = None
+    height_mm: Optional[int] = None
+    weight_g: Optional[int] = None
+    alcohol_units_per_week: Optional[float] = None
+    smoker: Optional[SmokerType] = None
+    smoking_per_day: Optional[int] = None
     properties: Optional[dict] = None
 
 
 class RelationshipCreate(BaseModel):
     members: list[uuid.UUID] = Field(default_factory=list)
     display_name: str = ""
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
 
 
 class EggCreate(BaseModel):
     display_name: str = ""
+    notes: str = ""
     properties: dict = Field(default_factory=dict)
     individual_id: Optional[uuid.UUID] = None
 

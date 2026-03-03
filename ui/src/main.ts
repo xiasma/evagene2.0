@@ -97,7 +97,7 @@ init();
 
 // --- Side hit-test for connection drawing ---
 
-const SIDE_TOLERANCE = 6;
+const SIDE_TOLERANCE = 10;
 
 function hitSide(pos: Point): PlacedIndividual | null {
   for (const ind of individuals) {

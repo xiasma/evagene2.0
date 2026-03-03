@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/eggs", tags=["eggs"])
 def create_egg(body: EggCreate):
     return store.create_egg(
         display_name=body.display_name,
+        notes=body.notes,
         properties=body.properties,
         individual_id=body.individual_id,
     )

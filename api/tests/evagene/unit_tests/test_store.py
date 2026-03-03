@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from evagene.models import Event, PersonName, BiologicalSex
+from evagene.models import BiologicalSex, Event, PersonName, SmokerType, VCardContact
 from evagene.store import Store
 
 
@@ -27,6 +27,50 @@ def test_create_individual_with_fields(fresh_store: Store):
     assert ind.name.full == "Jane Doe"
     assert ind.biological_sex == BiologicalSex.female
     assert ind.properties == {"note": "test"}
+
+
+def test_create_individual_with_new_fields(fresh_store: Store):
+    doctor = VCardContact(fn="Dr. Smith", properties={"practice_name": "Clinic"})
+    ind = fresh_store.create_individual(
+        notes="A note",
+        proband=45.0,
+        proband_text="proband arrow",
+        generation=3,
+        contacts={"doctor": doctor},
+        consent_to_share=True,
+        height_mm=1800,
+        weight_g=75000,
+        alcohol_units_per_week=3.5,
+        smoker=SmokerType.cigarette,
+        smoking_per_day=5,
+    )
+    assert ind.notes == "A note"
+    assert ind.proband == 45.0
+    assert ind.proband_text == "proband arrow"
+    assert ind.generation == 3
+    assert ind.contacts["doctor"].fn == "Dr. Smith"
+    assert ind.consent_to_share is True
+    assert ind.height_mm == 1800
+    assert ind.weight_g == 75000
+    assert ind.alcohol_units_per_week == 3.5
+    assert ind.smoker == SmokerType.cigarette
+    assert ind.smoking_per_day == 5
+
+
+def test_update_individual_new_fields(fresh_store: Store):
+    ind = fresh_store.create_individual()
+    updated = fresh_store.update_individual(
+        ind.id,
+        notes="Updated note",
+        proband=90.0,
+        height_mm=1700,
+        smoker=SmokerType.vape,
+    )
+    assert updated is ind
+    assert ind.notes == "Updated note"
+    assert ind.proband == 90.0
+    assert ind.height_mm == 1700
+    assert ind.smoker == SmokerType.vape
 
 
 def test_get_individual(fresh_store: Store):
@@ -100,6 +144,11 @@ def test_create_relationship_with_fields(fresh_store: Store):
     assert rel.members == [id1, id2]
     assert rel.display_name == "Couple"
     assert rel.properties == {"type": "married"}
+
+
+def test_create_relationship_with_notes(fresh_store: Store):
+    rel = fresh_store.create_relationship(members=[], notes="Separated in 2020")
+    assert rel.notes == "Separated in 2020"
 
 
 def test_get_relationship(fresh_store: Store):
@@ -200,6 +249,11 @@ def test_create_egg_with_fields(fresh_store: Store):
     assert egg.individual_id == child_id
 
 
+def test_create_egg_with_notes(fresh_store: Store):
+    egg = fresh_store.create_egg(notes="Frozen 2023")
+    assert egg.notes == "Frozen 2023"
+
+
 def test_get_egg(fresh_store: Store):
     egg = fresh_store.create_egg()
     found = fresh_store.get_egg(egg.id)
@@ -274,6 +328,11 @@ def test_create_pedigree_with_fields(fresh_store: Store):
     assert ped.date_represented == "2024-01-01"
     assert ped.owner == "clinic"
     assert ped.properties == {"note": "test"}
+
+
+def test_create_pedigree_with_notes(fresh_store: Store):
+    ped = fresh_store.create_pedigree(notes="Family history note")
+    assert ped.notes == "Family history note"
 
 
 def test_get_pedigree(fresh_store: Store):

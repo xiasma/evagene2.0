@@ -4,8 +4,8 @@ export type Shape = "circle" | "square" | "diamond" | "unrecognised";
 const RESAMPLE_N = 64;
 const MIN_POINTS = 10;
 const CLOSURE_THRESHOLD = 0.5; // max first-last distance as fraction of bounding size
-const CIRCULARITY_CV_THRESHOLD = 0.25; // coefficient of variation threshold for circle
-const CORNER_ANGLE_THRESHOLD = Math.PI / 3; // minimum turning angle to count as corner
+const CIRCULARITY_CV_THRESHOLD = 0.30; // coefficient of variation threshold for circle
+const CORNER_ANGLE_THRESHOLD = Math.PI / 2.5; // minimum turning angle to count as corner
 const CORNER_WINDOW = 5; // window size for turning angle computation
 
 export function recognise(points: Point[]): Shape {
@@ -225,7 +225,8 @@ export function classifyOrientation(cornerAngles: number[]): Shape {
   // Average angular deviation per corner must be under ~35° to count
   if (best / cornerAngles.length > Math.PI / 5) return "unrecognised";
 
-  return diamondScore < squareScore ? "diamond" : "square";
+  // Bias away from diamond: diamond must win by a margin
+  return diamondScore * 1.15 < squareScore ? "diamond" : "square";
 }
 
 function fitScore(measured: number[], targets: number[]): number {

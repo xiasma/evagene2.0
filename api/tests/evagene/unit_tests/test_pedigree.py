@@ -205,3 +205,12 @@ def test_add_event_to_pedigree(client: TestClient):
     # Verify on the pedigree detail
     detail = client.get(f"/api/pedigrees/{ped['id']}").json()
     assert len(detail["events"]) == 1
+
+
+def test_create_pedigree_with_notes(client: TestClient):
+    resp = client.post(
+        "/api/pedigrees",
+        json={"notes": "Family history note"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["notes"] == "Family history note"

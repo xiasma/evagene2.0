@@ -88,3 +88,12 @@ def test_add_event_to_egg_not_found(client: TestClient):
         json={"type": "retrieval"},
     )
     assert resp.status_code == 404
+
+
+def test_create_egg_with_notes(client: TestClient):
+    resp = client.post(
+        "/api/eggs",
+        json={"notes": "Frozen 2023"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["notes"] == "Frozen 2023"

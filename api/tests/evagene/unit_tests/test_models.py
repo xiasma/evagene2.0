@@ -2,18 +2,25 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+from pydantic import ValidationError
+
 from evagene.models import (
+    AffectionStatus,
     BiologicalSex,
+    DeathStatus,
     Egg,
     EggCreate,
     EntityReference,
     Event,
     EventCreate,
     EventUpdate,
+    FertilityStatus,
     Individual,
     IndividualCreate,
     IndividualEventCreate,
     IndividualEventType,
+    IndividualUpdate,
     Pedigree,
     PedigreeCreate,
     PedigreeDetail,
@@ -23,6 +30,11 @@ from evagene.models import (
     RelationshipCreate,
     RelationshipEventCreate,
     RelationshipEventType,
+    SmokerType,
+    VCardAddress,
+    VCardContact,
+    VCardEmail,
+    VCardPhone,
 )
 
 
@@ -36,11 +48,23 @@ def test_biological_sex_values():
     assert BiologicalSex.unknown == "unknown"
 
 
+def test_biological_sex_expanded_values():
+    assert BiologicalSex.ambiguous_male == "ambiguous_male"
+    assert BiologicalSex.ambiguous_female == "ambiguous_female"
+    assert BiologicalSex.none == "none"
+    assert BiologicalSex.other == "other"
+
+
 def test_individual_event_type_values():
     assert IndividualEventType.birth == "birth"
     assert IndividualEventType.death == "death"
     assert IndividualEventType.diagnosis == "diagnosis"
     assert IndividualEventType.symptom == "symptom"
+
+
+def test_individual_event_type_expanded_values():
+    assert IndividualEventType.affection == "affection"
+    assert IndividualEventType.fertility == "fertility"
 
 
 def test_relationship_event_type_values():
@@ -50,6 +74,38 @@ def test_relationship_event_type_values():
     assert RelationshipEventType.partnership == "partnership"
     assert RelationshipEventType.engagement == "engagement"
     assert RelationshipEventType.pregnancy == "pregnancy"
+
+
+def test_death_status_values():
+    expected = [
+        "unknown", "alive", "dead", "suicide_confirmed", "suicide_unconfirmed",
+        "spontaneous_abortion", "therapeutic_abortion", "neonatal_death",
+        "stillborn", "lived_one_day", "pregnancy", "other",
+    ]
+    actual = [e.value for e in DeathStatus]
+    assert actual == expected
+
+
+def test_affection_status_values():
+    expected = [
+        "unknown", "clear", "affected", "possible_affection", "heterozygous",
+        "affected_by_hearsay", "carrier", "examined", "untested", "immune",
+        "presymptomatic", "other",
+    ]
+    actual = [e.value for e in AffectionStatus]
+    assert actual == expected
+
+
+def test_fertility_status_values():
+    expected = ["unknown", "fertile", "infertile", "infertile_by_choice", "other"]
+    actual = [e.value for e in FertilityStatus]
+    assert actual == expected
+
+
+def test_smoker_type_values():
+    expected = ["vape", "cigarette", "cigar", "pipe", "mixed", "other"]
+    actual = [e.value for e in SmokerType]
+    assert actual == expected
 
 
 # --- PersonName ---
@@ -69,6 +125,56 @@ def test_person_name_with_values():
     assert pn.full == "Dr. Jane Doe Jr."
     assert pn.given == ["Jane"]
     assert pn.family == "Doe"
+
+
+# --- VCard models ---
+
+
+def test_vcard_contact_defaults():
+    vc = VCardContact()
+    assert vc.fn == ""
+    assert vc.n == PersonName()
+    assert vc.tel == []
+    assert vc.email == []
+    assert vc.adr == []
+    assert vc.org == ""
+    assert vc.title == ""
+    assert vc.note == ""
+    assert vc.properties == {}
+
+
+def test_vcard_contact_with_phones_emails_addresses():
+    vc = VCardContact(
+        fn="Dr. Smith",
+        tel=[VCardPhone(value="+1234567890", types=["work", "voice"])],
+        email=[VCardEmail(value="dr@example.com", types=["work"])],
+        adr=[VCardAddress(
+            street="123 Main St",
+            city="Springfield",
+            region="IL",
+            postal_code="62704",
+            country="US",
+            types=["work"],
+        )],
+    )
+    assert vc.fn == "Dr. Smith"
+    assert len(vc.tel) == 1
+    assert vc.tel[0].value == "+1234567890"
+    assert vc.tel[0].types == ["work", "voice"]
+    assert len(vc.email) == 1
+    assert vc.email[0].value == "dr@example.com"
+    assert len(vc.adr) == 1
+    assert vc.adr[0].city == "Springfield"
+    assert vc.adr[0].types == ["work"]
+
+
+def test_vcard_doctor_with_practice_name():
+    vc = VCardContact(
+        fn="Dr. Smith",
+        properties={"practice_name": "Springfield Clinic", "referred_by": "Dr. Jones"},
+    )
+    assert vc.properties["practice_name"] == "Springfield Clinic"
+    assert vc.properties["referred_by"] == "Dr. Jones"
 
 
 # --- Default UUID generation ---
@@ -130,6 +236,50 @@ def test_individual_default_name():
 def test_individual_default_biological_sex():
     ind = Individual()
     assert ind.biological_sex is None
+
+
+def test_individual_new_field_defaults():
+    ind = Individual()
+    assert ind.notes == ""
+    assert ind.proband == 0.0
+    assert ind.proband_text == ""
+    assert ind.generation is None
+    assert ind.contacts == {}
+    assert ind.consent_to_share is None
+    assert ind.height_mm is None
+    assert ind.weight_g is None
+    assert ind.alcohol_units_per_week is None
+    assert ind.smoker is None
+    assert ind.smoking_per_day is None
+
+
+def test_individual_proband_validation_accepts_valid_range():
+    ind = Individual(proband=0.0)
+    assert ind.proband == 0.0
+    ind2 = Individual(proband=180.0)
+    assert ind2.proband == 180.0
+    ind3 = Individual(proband=360.0)
+    assert ind3.proband == 360.0
+
+
+def test_individual_proband_validation_rejects_negative():
+    with pytest.raises(ValidationError):
+        Individual(proband=-1.0)
+
+
+def test_individual_proband_validation_rejects_over_360():
+    with pytest.raises(ValidationError):
+        Individual(proband=361.0)
+
+
+def test_individual_contacts_dict():
+    doctor = VCardContact(
+        fn="Dr. Smith",
+        properties={"practice_name": "Test Clinic"},
+    )
+    ind = Individual(contacts={"doctor": doctor})
+    assert "doctor" in ind.contacts
+    assert ind.contacts["doctor"].fn == "Dr. Smith"
 
 
 def test_relationship_default_members_empty():
@@ -197,6 +347,25 @@ def test_pedigree_detail_extends_pedigree():
     assert detail.individual_ids == []
 
 
+# --- Notes defaults on all entities ---
+
+
+def test_individual_notes_default():
+    assert Individual().notes == ""
+
+
+def test_relationship_notes_default():
+    assert Relationship().notes == ""
+
+
+def test_egg_notes_default():
+    assert Egg().notes == ""
+
+
+def test_pedigree_notes_default():
+    assert Pedigree().notes == ""
+
+
 # --- EntityReference required fields ---
 
 
@@ -220,6 +389,37 @@ def test_individual_create_defaults():
     assert ic.properties == {}
 
 
+def test_individual_create_new_field_defaults():
+    ic = IndividualCreate()
+    assert ic.notes == ""
+    assert ic.proband == 0.0
+    assert ic.proband_text == ""
+    assert ic.generation is None
+    assert ic.contacts == {}
+    assert ic.consent_to_share is None
+    assert ic.height_mm is None
+    assert ic.weight_g is None
+    assert ic.alcohol_units_per_week is None
+    assert ic.smoker is None
+    assert ic.smoking_per_day is None
+
+
+def test_individual_update_new_fields_optional():
+    iu = IndividualUpdate()
+    assert iu.name is None
+    assert iu.notes is None
+    assert iu.proband is None
+    assert iu.proband_text is None
+    assert iu.generation is None
+    assert iu.contacts is None
+    assert iu.consent_to_share is None
+    assert iu.height_mm is None
+    assert iu.weight_g is None
+    assert iu.alcohol_units_per_week is None
+    assert iu.smoker is None
+    assert iu.smoking_per_day is None
+
+
 def test_relationship_create_default_members():
     rc = RelationshipCreate()
     assert rc.members == []
@@ -227,11 +427,19 @@ def test_relationship_create_default_members():
     assert rc.properties == {}
 
 
+def test_relationship_create_notes_default():
+    assert RelationshipCreate().notes == ""
+
+
 def test_egg_create_defaults():
     ec = EggCreate()
     assert ec.display_name == ""
     assert ec.properties == {}
     assert ec.individual_id is None
+
+
+def test_egg_create_notes_default():
+    assert EggCreate().notes == ""
 
 
 def test_pedigree_create_defaults():
@@ -242,12 +450,20 @@ def test_pedigree_create_defaults():
     assert pc.properties == {}
 
 
+def test_pedigree_create_notes_default():
+    assert PedigreeCreate().notes == ""
+
+
 def test_pedigree_update_all_optional():
     pu = PedigreeUpdate()
     assert pu.display_name is None
     assert pu.date_represented is None
     assert pu.owner is None
     assert pu.properties is None
+
+
+def test_pedigree_update_notes_optional():
+    assert PedigreeUpdate().notes is None
 
 
 def test_event_create_required_type():
@@ -297,6 +513,39 @@ def test_individual_round_trip():
     assert restored.biological_sex == BiologicalSex.female
     assert restored.properties == {"key": "val"}
     assert restored.events == ind.events
+
+
+def test_individual_round_trip_with_new_fields():
+    doctor = VCardContact(
+        fn="Dr. Smith",
+        properties={"practice_name": "Test Clinic"},
+    )
+    ind = Individual(
+        notes="Patient note",
+        proband=90.0,
+        proband_text="arrow text",
+        generation=2,
+        contacts={"doctor": doctor},
+        consent_to_share=True,
+        height_mm=1750,
+        weight_g=70000,
+        alcohol_units_per_week=5.5,
+        smoker=SmokerType.cigarette,
+        smoking_per_day=10,
+    )
+    data = ind.model_dump()
+    restored = Individual.model_validate(data)
+    assert restored.notes == "Patient note"
+    assert restored.proband == 90.0
+    assert restored.proband_text == "arrow text"
+    assert restored.generation == 2
+    assert restored.contacts["doctor"].fn == "Dr. Smith"
+    assert restored.consent_to_share is True
+    assert restored.height_mm == 1750
+    assert restored.weight_g == 70000
+    assert restored.alcohol_units_per_week == 5.5
+    assert restored.smoker == SmokerType.cigarette
+    assert restored.smoking_per_day == 10
 
 
 def test_event_round_trip():

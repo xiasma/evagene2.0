@@ -15,6 +15,7 @@ def create_relationship(body: RelationshipCreate):
     return store.create_relationship(
         members=body.members,
         display_name=body.display_name,
+        notes=body.notes,
         properties=body.properties,
     )
 

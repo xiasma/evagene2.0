@@ -16,6 +16,7 @@ def create_pedigree(body: PedigreeCreate):
         display_name=body.display_name,
         date_represented=body.date_represented,
         owner=body.owner,
+        notes=body.notes,
         properties=body.properties,
     )
 

@@ -20,6 +20,17 @@ def create_individual(body: IndividualCreate | None = None):
         biological_sex=body.biological_sex,
         x=body.x,
         y=body.y,
+        notes=body.notes,
+        proband=body.proband,
+        proband_text=body.proband_text,
+        generation=body.generation,
+        contacts=body.contacts,
+        consent_to_share=body.consent_to_share,
+        height_mm=body.height_mm,
+        weight_g=body.weight_g,
+        alcohol_units_per_week=body.alcohol_units_per_week,
+        smoker=body.smoker,
+        smoking_per_day=body.smoking_per_day,
         properties=body.properties,
     )
 

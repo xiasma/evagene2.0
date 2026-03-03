@@ -3,7 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from .models import Egg, Event, Individual, Pedigree, PedigreeDetail, PersonName, Relationship
+from .models import (
+    Egg, Event, Individual, Pedigree, PedigreeDetail, PersonName, Relationship,
+    SmokerType, VCardContact,
+)
 
 
 class Store:
@@ -24,6 +27,17 @@ class Store:
         biological_sex=None,
         x: float | None = None,
         y: float | None = None,
+        notes: str = "",
+        proband: float = 0.0,
+        proband_text: str = "",
+        generation: int | None = None,
+        contacts: dict[str, VCardContact] | None = None,
+        consent_to_share: bool | None = None,
+        height_mm: int | None = None,
+        weight_g: int | None = None,
+        alcohol_units_per_week: float | None = None,
+        smoker: SmokerType | None = None,
+        smoking_per_day: int | None = None,
         properties: dict | None = None,
     ) -> Individual:
         ind = Individual(
@@ -32,6 +46,17 @@ class Store:
             biological_sex=biological_sex,
             x=x,
             y=y,
+            notes=notes,
+            proband=proband,
+            proband_text=proband_text,
+            generation=generation,
+            contacts=contacts or {},
+            consent_to_share=consent_to_share,
+            height_mm=height_mm,
+            weight_g=weight_g,
+            alcohol_units_per_week=alcohol_units_per_week,
+            smoker=smoker,
+            smoking_per_day=smoking_per_day,
             properties=properties or {},
         )
         self.individuals[ind.id] = ind
@@ -70,11 +95,13 @@ class Store:
         self,
         members: list[uuid.UUID] | None = None,
         display_name: str = "",
+        notes: str = "",
         properties: dict | None = None,
     ) -> Relationship:
         rel = Relationship(
             members=members or [],
             display_name=display_name,
+            notes=notes,
             properties=properties or {},
         )
         self.relationships[rel.id] = rel
@@ -118,11 +145,13 @@ class Store:
     def create_egg(
         self,
         display_name: str = "",
+        notes: str = "",
         properties: dict | None = None,
         individual_id: uuid.UUID | None = None,
     ) -> Egg:
         egg = Egg(
             display_name=display_name,
+            notes=notes,
             properties=properties or {},
             individual_id=individual_id,
         )
@@ -154,6 +183,7 @@ class Store:
         display_name: str = "",
         date_represented: str | None = None,
         owner: str = "",
+        notes: str = "",
         properties: dict | None = None,
     ) -> Pedigree:
         now = datetime.now(timezone.utc).isoformat()
@@ -161,6 +191,7 @@ class Store:
             display_name=display_name,
             date_represented=date_represented,
             owner=owner,
+            notes=notes,
             properties=properties or {},
             created_at=now,
             updated_at=now,

@@ -123,3 +123,12 @@ def test_add_event_rejects_invalid_type(client: TestClient):
         json={"type": "birth"},  # not a valid RelationshipEventType
     )
     assert resp.status_code == 422
+
+
+def test_create_relationship_with_notes(client: TestClient):
+    resp = client.post(
+        "/api/relationships",
+        json={"members": [], "notes": "Separated in 2020"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["notes"] == "Separated in 2020"
