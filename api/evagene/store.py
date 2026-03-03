@@ -148,12 +148,14 @@ class Store:
         notes: str = "",
         properties: dict | None = None,
         individual_id: uuid.UUID | None = None,
+        relationship_id: uuid.UUID | None = None,
     ) -> Egg:
         egg = Egg(
             display_name=display_name,
             notes=notes,
             properties=properties or {},
             individual_id=individual_id,
+            relationship_id=relationship_id,
         )
         self.eggs[egg.id] = egg
         return egg

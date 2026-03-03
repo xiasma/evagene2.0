@@ -97,3 +97,14 @@ def test_create_egg_with_notes(client: TestClient):
     )
     assert resp.status_code == 201
     assert resp.json()["notes"] == "Frozen 2023"
+
+
+def test_create_egg_with_relationship_id(client: TestClient):
+    rel = client.post("/api/relationships", json={"members": []}).json()
+    resp = client.post(
+        "/api/eggs",
+        json={"relationship_id": rel["id"]},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["relationship_id"] == rel["id"]

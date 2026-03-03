@@ -13,7 +13,9 @@
       "Bash(netstat:*)",
       "Bash(wmic process:*)",
       "Bash(taskkill:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(powershell:*)",
+      "Bash(tasklist:*)"
     ]
   }
 }

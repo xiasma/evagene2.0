@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:MyNamespace="clr-namespace:Xiasma.WPF;assembly=Xiasma.WPF">
+  <Grid.RowDefinitions>
+    <RowDefinition Height="15"></RowDefinition>
+    <RowDefinition Height="48"></RowDefinition>
+    <RowDefinition Height="18"></RowDefinition>
+  </Grid.RowDefinitions>
+  <Line Name="VerticalAnchors" X1="24" Y1="2" X2="24" Y2="46" Visibility="Hidden" Grid.Row="1" />
+  <Line Name="HorizontalAnchors" X1="2" Y1="24" X2="46" Y2="24" Visibility="Hidden" Grid.Row="1" />
+  <Line Name="Centre" X1="24" Y1="24" Visibility="Hidden" Grid.Row="1" />
+  <Path Grid.Row="1">
+    <Path.Data>
+      <PathGeometry>
+        <PathFigure StartPoint="2,2" IsClosed="True">
+          <PathFigure.Segments>
+            <LineSegment Point="46,2" />
+            <LineSegment Point="46,46" />
+            <LineSegment Point="2,46" />
+          </PathFigure.Segments>
+        </PathFigure>
+      </PathGeometry>
+    </Path.Data>
+  </Path>
+  <Line Name="Suicide1" X1="58" Y1="-10" X2="-10" Y2="58" Visibility="Visible" Grid.Row="1"  />
+  <Line Name="Suicide2" X1="-10" Y1="-10" X2="58" Y2="58" Visibility="Visible" Grid.Row="1"  />
+  <Path Name="Carrier" Grid.Row="1" >
+    <Path.Data>
+      <RectangleGeometry Rect="20,20,8,8" />
+    </Path.Data>
+  </Path>
+  <Line Name="Infertile" X1="24" Y1="-2" X2="24" Y2="12" Visibility="Visible" Grid.Row="2"  />
+  <Line X1="0" Y1="12" X2="48" Y2="12" Visibility="Visible" Grid.Row="2"  />
+  <Line X1="0" Y1="16" X2="48" Y2="16" Visibility="Visible" Grid.Row="2"  />
+</Grid>

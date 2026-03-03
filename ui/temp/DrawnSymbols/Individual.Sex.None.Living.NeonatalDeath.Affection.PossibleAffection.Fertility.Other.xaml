@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:MyNamespace="clr-namespace:Xiasma.WPF;assembly=Xiasma.WPF">
+  <Grid.RowDefinitions>
+    <RowDefinition Height="15"></RowDefinition>
+    <RowDefinition Height="48"></RowDefinition>
+    <RowDefinition Height="18"></RowDefinition>
+  </Grid.RowDefinitions>
+  <Line Name="VerticalAnchors" X1="24" Y1="2" X2="24" Y2="46" Visibility="Hidden" Grid.Row="1" />
+  <Line Name="HorizontalAnchors" X1="2" Y1="24" X2="46" Y2="24" Visibility="Hidden" Grid.Row="1" />
+  <Line Name="Centre" X1="24" Y1="24" Visibility="Hidden" Grid.Row="1" />
+  <Path Grid.Row="1">
+    <Path.Data>
+      <PathGeometry>
+        <PathFigure StartPoint="24,2" IsClosed="True">
+          <PathFigure.Segments>
+            <LineSegment Point="46,24" />
+            <LineSegment Point="24,46" />
+            <LineSegment Point="2,24" />
+          </PathFigure.Segments>
+        </PathFigure>
+      </PathGeometry>
+    </Path.Data>
+  </Path>
+  <Path Grid.Row="1">
+    <Path.Data>
+      <PathGeometry>
+        <PathFigure StartPoint="24,12" IsClosed="True">
+          <PathFigure.Segments>
+            <LineSegment Point="36,24" />
+            <LineSegment Point="24,36" />
+            <LineSegment Point="12,24" />
+          </PathFigure.Segments>
+        </PathFigure>
+      </PathGeometry>
+    </Path.Data>
+  </Path>
+  <Path Grid.Row="1">
+    <Path.Data>
+      <PathGeometry>
+        <PathFigure StartPoint="24,16" IsClosed="True">
+          <PathFigure.Segments>
+            <LineSegment Point="32,24" />
+            <LineSegment Point="24,32" />
+            <LineSegment Point="16,24" />
+          </PathFigure.Segments>
+        </PathFigure>
+      </PathGeometry>
+    </Path.Data>
+  </Path>
+  <TextBlock Text="NND" TextWrapping="Wrap" FontSize="10" TextAlignment="Center" Background="{x:Null}" HorizontalAlignment="Center" Grid.Row="2" Height="16"  />
+  <TextBlock Text="?" TextWrapping="Wrap" FontSize="12" TextAlignment="Center" Background="{x:Null}" Grid.Row="2" HorizontalAlignment="Right"  />
+  <Line X1="0" Y1="-5" X2="0" Y2="5" Visibility="Visible" Grid.Row="2" Margin="5,5,0,0"  />
+  <Line X1="-5" Y1="0" X2="5" Y2="0" Visibility="Visible" Grid.Row="2" Margin="5,5,0,0"  />
+</Grid>

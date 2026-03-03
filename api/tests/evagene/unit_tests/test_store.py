@@ -254,6 +254,14 @@ def test_create_egg_with_notes(fresh_store: Store):
     assert egg.notes == "Frozen 2023"
 
 
+def test_create_egg_with_relationship_id(fresh_store: Store):
+    rel_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+    egg = fresh_store.create_egg(individual_id=child_id, relationship_id=rel_id)
+    assert egg.relationship_id == rel_id
+    assert egg.individual_id == child_id
+
+
 def test_get_egg(fresh_store: Store):
     egg = fresh_store.create_egg()
     found = fresh_store.get_egg(egg.id)

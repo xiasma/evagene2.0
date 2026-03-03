@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:MyNamespace="clr-namespace:Xiasma.WPF;assembly=Xiasma.WPF"
+      Width="48" Height="48">
+    <Line Name="VerticalAnchors" X1="24" Y1="0" X2="24" Y2="48" Visibility="Hidden"/>
+    <Line Name="HorizontalAnchors" X1="0" Y1="24" X2="48" Y2="24" Visibility="Hidden"/>
+    <Line Name="Centre" X1="24" Y1="24" Visibility="Hidden"/>
+    <Rectangle Margin="11.44,11.686,7.722,8" RadiusX="1" RadiusY="8"/>
+    <Path Margin="14.157,17.875,0,0" VerticalAlignment="Top" Stretch="Fill" Data="M18,18 L77,18" HorizontalAlignment="Left" Width="9.295" />
+    <Path Margin="14.157,22.308,0,23.738" Stretch="Fill" Data="M18,18 L77,18" HorizontalAlignment="Left" Width="9.295" />
+    <Path Data="M18,18L77,18" Height="2" HorizontalAlignment="Left" Margin="14.157,0,0,19.162" Stretch="Fill" VerticalAlignment="Bottom" Width="9.295" />
+    <Path Data="M18,18L77,18" Height="2" HorizontalAlignment="Left" Margin="14.157,0,0,14.443" Stretch="Fill" VerticalAlignment="Bottom" Width="9.295" />
+    <Path Data="M18,18L77,18" Height="2" HorizontalAlignment="Right" Margin="0,17.875,10.868,0" Stretch="Fill" VerticalAlignment="Top" Width="9.295" />
+    <Path Data="M18,18L77,18" HorizontalAlignment="Right" Margin="0,22.308,10.868,23.692" Stretch="Fill" Width="9.295" />
+    <Path Data="M18,18L77,18" Height="2" HorizontalAlignment="Right" Margin="0,0,10.868,19.162" Stretch="Fill" VerticalAlignment="Bottom" Width="9.295" />
+    <Path Data="M18,18L77,18" HorizontalAlignment="Right" Margin="0,0,10.868,14.443" Stretch="Fill" Width="9.295" Height="2" VerticalAlignment="Bottom" />
+    <Path Data="M18,18 L18,77" Margin="21.021,13.013,17.732,9.724" Stretch="Fill" />
+</Grid>

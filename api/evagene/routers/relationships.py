@@ -4,7 +4,15 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from ..models import Event, Relationship, RelationshipCreate, RelationshipEventCreate
+from ..models import (
+    EntityReference,
+    Event,
+    OffspringCreate,
+    OffspringResult,
+    Relationship,
+    RelationshipCreate,
+    RelationshipEventCreate,
+)
 from ..store import store
 
 router = APIRouter(prefix="/api/relationships", tags=["relationships"])
@@ -60,3 +68,49 @@ def add_event_to_relationship(relationship_id: uuid.UUID, body: RelationshipEven
     if result is None:
         raise HTTPException(404, "Relationship not found")
     return result
+
+
+@router.post(
+    "/{relationship_id}/offspring",
+    response_model=OffspringResult,
+    status_code=201,
+)
+def add_offspring(relationship_id: uuid.UUID, body: OffspringCreate):
+    # Validate relationship
+    rel = store.get_relationship(relationship_id)
+    if rel is None:
+        raise HTTPException(404, "Relationship not found")
+
+    # Validate individual
+    ind = store.get_individual(body.individual_id)
+    if ind is None:
+        raise HTTPException(404, "Individual not found")
+
+    # Validate pedigree
+    ped = store.get_pedigree(body.pedigree_id)
+    if ped is None:
+        raise HTTPException(404, "Pedigree not found")
+
+    # 1. Create pregnancy event on the relationship
+    pregnancy_event = Event(type="pregnancy")
+    store.add_event(relationship_id, pregnancy_event)
+
+    # 2. Create egg with relationship_id and individual_id
+    egg = store.create_egg(
+        relationship_id=relationship_id,
+        individual_id=body.individual_id,
+    )
+
+    # 3. Add egg to pedigree
+    store.add_egg_to_pedigree(body.pedigree_id, egg.id)
+
+    # 4. Add entity reference on pregnancy event pointing to egg
+    pregnancy_event.entity_references.append(
+        EntityReference(
+            entity_id=egg.id,
+            entity_type="egg",
+            role="offspring",
+        )
+    )
+
+    return OffspringResult(pregnancy_event=pregnancy_event, egg=egg)

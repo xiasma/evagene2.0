@@ -21,6 +21,8 @@ from evagene.models import (
     IndividualEventCreate,
     IndividualEventType,
     IndividualUpdate,
+    OffspringCreate,
+    OffspringResult,
     Pedigree,
     PedigreeCreate,
     PedigreeDetail,
@@ -322,6 +324,7 @@ def test_egg_defaults():
     assert egg.display_name == ""
     assert egg.properties == {}
     assert egg.individual_id is None
+    assert egg.relationship_id is None
     assert egg.events == []
 
 
@@ -440,6 +443,27 @@ def test_egg_create_defaults():
 
 def test_egg_create_notes_default():
     assert EggCreate().notes == ""
+
+
+def test_egg_create_relationship_id_default():
+    ec = EggCreate()
+    assert ec.relationship_id is None
+
+
+def test_offspring_create_required_fields():
+    ind_id = uuid.uuid4()
+    ped_id = uuid.uuid4()
+    oc = OffspringCreate(individual_id=ind_id, pedigree_id=ped_id)
+    assert oc.individual_id == ind_id
+    assert oc.pedigree_id == ped_id
+
+
+def test_offspring_result_fields():
+    ev = Event(type="pregnancy")
+    egg = Egg()
+    result = OffspringResult(pregnancy_event=ev, egg=egg)
+    assert result.pregnancy_event is ev
+    assert result.egg is egg
 
 
 def test_pedigree_create_defaults():
@@ -570,12 +594,19 @@ def test_event_round_trip():
 
 def test_egg_round_trip():
     child_id = uuid.uuid4()
-    egg = Egg(display_name="Egg 1", properties={"frozen": True}, individual_id=child_id)
+    rel_id = uuid.uuid4()
+    egg = Egg(
+        display_name="Egg 1",
+        properties={"frozen": True},
+        individual_id=child_id,
+        relationship_id=rel_id,
+    )
     data = egg.model_dump()
     restored = Egg.model_validate(data)
     assert restored.id == egg.id
     assert restored.display_name == "Egg 1"
     assert restored.individual_id == child_id
+    assert restored.relationship_id == rel_id
 
 
 def test_pedigree_round_trip():

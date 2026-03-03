@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:MyNamespace="clr-namespace:Xiasma.WPF;assembly=Xiasma.WPF"
+      Width="48" Height="48">
+    <Line Name="VerticalAnchors" X1="24" Y1="0" X2="24" Y2="48" Visibility="Hidden"/>
+    <Line Name="HorizontalAnchors" X1="0" Y1="24" X2="48" Y2="24" Visibility="Hidden"/>
+    <Line Name="Centre" X1="24" Y1="24" Visibility="Hidden"/>
+    <Path Margin="15.587,14.3,14.872,0" VerticalAlignment="Top" Height="1.144" Stretch="Fill" StrokeThickness="1" Data="M12.431925,11.960876 L37.471049,12.117371"/>
+    <Path Margin="15.587,14.3,23.166,15.587" Fill="{x:Null}" Stretch="Fill" Data="M12.27543,12.117371 L24.169014,36.687011"/>
+    <Path Margin="22.594,14.3,14.872,15.587" Fill="{x:Null}" Stretch="Fill" Data="M36.375587,12.43036 L23.699531,36.530516"/>
+    <Ellipse Margin="10.153,8.723,0,0" Height="12" HorizontalAlignment="Left" VerticalAlignment="Top" Width="12"/>
+    <Ellipse Margin="0,8.723,8.866,0" Height="12" HorizontalAlignment="Right" VerticalAlignment="Top" Width="12"/>
+    <Ellipse Margin="18.018,0,18.018,11.938" Height="12" VerticalAlignment="Bottom"/>
+</Grid>

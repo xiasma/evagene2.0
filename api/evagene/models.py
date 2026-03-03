@@ -183,6 +183,7 @@ class Egg(BaseModel):
     notes: str = ""
     properties: dict = Field(default_factory=dict)
     individual_id: Optional[uuid.UUID] = None  # resulting child
+    relationship_id: Optional[uuid.UUID] = None  # parent relationship
     events: list[Event] = Field(default_factory=list)
 
 
@@ -279,6 +280,7 @@ class EggCreate(BaseModel):
     notes: str = ""
     properties: dict = Field(default_factory=dict)
     individual_id: Optional[uuid.UUID] = None
+    relationship_id: Optional[uuid.UUID] = None
 
 
 class IndividualEventCreate(BaseModel):
@@ -320,3 +322,13 @@ class EntityReferenceCreate(BaseModel):
     entity_type: str
     role: str
     properties: dict = Field(default_factory=dict)
+
+
+class OffspringCreate(BaseModel):
+    individual_id: uuid.UUID
+    pedigree_id: uuid.UUID
+
+
+class OffspringResult(BaseModel):
+    pregnancy_event: Event
+    egg: Egg

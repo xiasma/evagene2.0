@@ -132,3 +132,106 @@ def test_create_relationship_with_notes(client: TestClient):
     )
     assert resp.status_code == 201
     assert resp.json()["notes"] == "Separated in 2020"
+
+
+# --- Offspring endpoint ---
+
+
+def test_add_offspring(client: TestClient):
+    # Create two parents and a child
+    parent1 = client.post("/api/individuals").json()
+    parent2 = client.post("/api/individuals").json()
+    child = client.post("/api/individuals").json()
+    rel = client.post(
+        "/api/relationships",
+        json={"members": [parent1["id"], parent2["id"]]},
+    ).json()
+    ped = client.post("/api/pedigrees", json={"display_name": "Test"}).json()
+    # Add entities to pedigree
+    client.post(f"/api/pedigrees/{ped['id']}/individuals/{child['id']}")
+    client.post(f"/api/pedigrees/{ped['id']}/relationships/{rel['id']}")
+
+    resp = client.post(
+        f"/api/relationships/{rel['id']}/offspring",
+        json={"individual_id": child["id"], "pedigree_id": ped["id"]},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+
+    # Verify pregnancy event
+    assert data["pregnancy_event"]["type"] == "pregnancy"
+    assert len(data["pregnancy_event"]["entity_references"]) == 1
+    ref = data["pregnancy_event"]["entity_references"][0]
+    assert ref["entity_type"] == "egg"
+    assert ref["role"] == "offspring"
+
+    # Verify egg
+    assert data["egg"]["individual_id"] == child["id"]
+    assert data["egg"]["relationship_id"] == rel["id"]
+
+    # Verify pregnancy event is on the relationship
+    updated_rel = client.get(f"/api/relationships/{rel['id']}").json()
+    pregnancy_events = [e for e in updated_rel["events"] if e["type"] == "pregnancy"]
+    assert len(pregnancy_events) == 1
+
+    # Verify egg is in pedigree detail
+    detail = client.get(f"/api/pedigrees/{ped['id']}").json()
+    egg_ids = [e["id"] for e in detail["eggs"]]
+    assert data["egg"]["id"] in egg_ids
+
+
+def test_add_offspring_relationship_not_found(client: TestClient):
+    child = client.post("/api/individuals").json()
+    ped = client.post("/api/pedigrees", json={}).json()
+    resp = client.post(
+        f"/api/relationships/{uuid.uuid4()}/offspring",
+        json={"individual_id": child["id"], "pedigree_id": ped["id"]},
+    )
+    assert resp.status_code == 404
+    assert "Relationship" in resp.json()["detail"]
+
+
+def test_add_offspring_individual_not_found(client: TestClient):
+    rel = client.post("/api/relationships", json={"members": []}).json()
+    ped = client.post("/api/pedigrees", json={}).json()
+    resp = client.post(
+        f"/api/relationships/{rel['id']}/offspring",
+        json={"individual_id": str(uuid.uuid4()), "pedigree_id": ped["id"]},
+    )
+    assert resp.status_code == 404
+    assert "Individual" in resp.json()["detail"]
+
+
+def test_add_offspring_pedigree_not_found(client: TestClient):
+    ind = client.post("/api/individuals").json()
+    rel = client.post("/api/relationships", json={"members": []}).json()
+    resp = client.post(
+        f"/api/relationships/{rel['id']}/offspring",
+        json={"individual_id": ind["id"], "pedigree_id": str(uuid.uuid4())},
+    )
+    assert resp.status_code == 404
+    assert "Pedigree" in resp.json()["detail"]
+
+
+def test_add_offspring_single_parent(client: TestClient):
+    # Single-member relationship (1 parent)
+    parent = client.post("/api/individuals").json()
+    child = client.post("/api/individuals").json()
+    rel = client.post(
+        "/api/relationships",
+        json={"members": [parent["id"]]},
+    ).json()
+    ped = client.post("/api/pedigrees", json={}).json()
+    client.post(f"/api/pedigrees/{ped['id']}/individuals/{parent['id']}")
+    client.post(f"/api/pedigrees/{ped['id']}/individuals/{child['id']}")
+    client.post(f"/api/pedigrees/{ped['id']}/relationships/{rel['id']}")
+
+    resp = client.post(
+        f"/api/relationships/{rel['id']}/offspring",
+        json={"individual_id": child["id"], "pedigree_id": ped["id"]},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["egg"]["individual_id"] == child["id"]
+    assert data["egg"]["relationship_id"] == rel["id"]
+    assert len(rel["members"]) == 1  # confirm single parent

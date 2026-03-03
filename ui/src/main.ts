@@ -15,6 +15,12 @@ interface PlacedRelationship {
   members: string[];
 }
 
+interface PlacedEgg {
+  id: string;
+  individual_id: string | null;
+  relationship_id: string | null;
+}
+
 // --- DOM ---
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -44,6 +50,7 @@ const SHAPE_TO_SEX: Record<string, string> = {
 let pedigreeId: string | null = null;
 let individuals: PlacedIndividual[] = [];
 let relationships: PlacedRelationship[] = [];
+let eggs: PlacedEgg[] = [];
 let drawing = false;
 let points: Point[] = [];
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -58,6 +65,19 @@ let selectedIds: Set<string> = new Set();
 // Connection drawing state
 let connecting = false;
 let connectSourceId: string | null = null;
+
+// Parental line drawing state
+let drawingParentalLine = false;
+let parentalSource: {
+  type: "relationship";
+  relId: string;
+} | {
+  type: "parent";
+  indId: string;
+} | {
+  type: "child";
+  indId: string;
+} | null = null;
 
 // --- Canvas sizing ---
 
@@ -121,26 +141,137 @@ function hasRelationship(idA: string, idB: string): boolean {
   );
 }
 
+// --- Parental line hit-tests ---
+
+const PARENTAL_TOLERANCE = 12;
+
+function pointToSegmentDist(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function hitRelationshipLine(pos: Point): PlacedRelationship | null {
+  const half = SHAPE_SIZE / 2;
+  for (const rel of relationships) {
+    if (rel.members.length < 2) continue;
+    const a = individuals.find((i) => i.id === rel.members[0]);
+    const b = individuals.find((i) => i.id === rel.members[1]);
+    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null)
+      continue;
+    const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+    const dist = pointToSegmentDist(
+      pos.x,
+      pos.y,
+      left.x + half,
+      left.y,
+      right.x - half,
+      right.y,
+    );
+    if (dist <= PARENTAL_TOLERANCE) return rel;
+  }
+  return null;
+}
+
+function hitBottom(pos: Point): PlacedIndividual | null {
+  const half = SHAPE_SIZE / 2;
+  for (const ind of individuals) {
+    if (ind.x == null || ind.y == null) continue;
+    if (Math.hypot(pos.x - ind.x, pos.y - (ind.y + half)) <= PARENTAL_TOLERANCE) {
+      return ind;
+    }
+  }
+  return null;
+}
+
+function hitTop(pos: Point): PlacedIndividual | null {
+  const half = SHAPE_SIZE / 2;
+  for (const ind of individuals) {
+    if (ind.x == null || ind.y == null) continue;
+    if (Math.hypot(pos.x - ind.x, pos.y - (ind.y - half)) <= PARENTAL_TOLERANCE) {
+      return ind;
+    }
+  }
+  return null;
+}
+
+function getRelationshipMidpoint(
+  rel: PlacedRelationship,
+): { x: number; y: number } | null {
+  if (rel.members.length < 2) return null;
+  const a = individuals.find((i) => i.id === rel.members[0]);
+  const b = individuals.find((i) => i.id === rel.members[1]);
+  if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null)
+    return null;
+  const half = SHAPE_SIZE / 2;
+  const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+  return {
+    x: (left.x + half + right.x - half) / 2,
+    y: (left.y + right.y) / 2,
+  };
+}
+
 // --- Drawing handlers ---
+
+function beginStroke(pos: Point) {
+  drawing = true;
+  points = [pos];
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ctx.strokeStyle = "#334155";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+}
 
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   const pos = pointerPos(e);
 
-  // Priority 1: Near side of any shape → enter connecting mode
+  // Priority 1: Hit relationship line → parental line from relationship
+  const relHit = hitRelationshipLine(pos);
+  if (relHit) {
+    drawingParentalLine = true;
+    parentalSource = { type: "relationship", relId: relHit.id };
+    beginStroke(pos);
+    return;
+  }
+
+  // Priority 2: Hit bottom of individual → parental line from parent
+  const bottomHit = hitBottom(pos);
+  if (bottomHit) {
+    drawingParentalLine = true;
+    parentalSource = { type: "parent", indId: bottomHit.id };
+    beginStroke(pos);
+    return;
+  }
+
+  // Priority 3: Hit top of individual → parental line (reverse: child→parent)
+  const topHit = hitTop(pos);
+  if (topHit) {
+    drawingParentalLine = true;
+    parentalSource = { type: "child", indId: topHit.id };
+    beginStroke(pos);
+    return;
+  }
+
+  // Priority 4: Near side of any shape → enter connecting mode
   const sideHit = hitSide(pos);
   if (sideHit) {
     connecting = true;
     connectSourceId = sideHit.id;
-    drawing = true;
-    points = [pos];
-
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    beginStroke(pos);
     return;
   }
 
@@ -173,16 +304,8 @@ canvas.addEventListener("pointerdown", (e) => {
   } else {
     // Hit nothing → clear selection, enter draw mode
     selectedIds = new Set();
-    drawing = true;
-    points = [pos];
     render();
-
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    beginStroke(pos);
   }
 });
 
@@ -228,6 +351,61 @@ canvas.addEventListener("pointerup", () => {
 
   if (!drawing) return;
   drawing = false;
+
+  // Parental line mode
+  if (drawingParentalLine) {
+    const source = parentalSource;
+    drawingParentalLine = false;
+    parentalSource = null;
+
+    if (points.length > 0 && source) {
+      const endpoint = points[points.length - 1];
+
+      // For parental line endpoints, accept hitting anywhere on the shape
+      const hitRadius = SHAPE_SIZE / 2 + 4;
+      const hitIndividual = (pos: Point) =>
+        individuals.find(
+          (ind) =>
+            ind.x != null &&
+            ind.y != null &&
+            Math.hypot(pos.x - ind.x, pos.y - ind.y) <= hitRadius,
+        ) ?? null;
+
+      if (source.type === "relationship") {
+        const child = hitIndividual(endpoint);
+        if (child) {
+          render();
+          handleParentalLineFromRelationship(source.relId, child.id);
+        } else {
+          rejectStroke(points);
+        }
+      } else if (source.type === "parent") {
+        const child = hitIndividual(endpoint);
+        if (child && child.id !== source.indId) {
+          render();
+          handleParentalLineFromIndividual(source.indId, child.id);
+        } else {
+          rejectStroke(points);
+        }
+      } else if (source.type === "child") {
+        // Reverse: child → relationship line OR child → parent individual
+        const relTarget = hitRelationshipLine(endpoint);
+        if (relTarget) {
+          render();
+          handleParentalLineFromRelationship(relTarget.id, source.indId);
+        } else {
+          const parent = hitIndividual(endpoint);
+          if (parent && parent.id !== source.indId) {
+            render();
+            handleParentalLineFromIndividual(parent.id, source.indId);
+          } else {
+            rejectStroke(points);
+          }
+        }
+      }
+    }
+    return;
+  }
 
   // Connection mode: check if endpoint hits a different individual's side
   if (connecting) {
@@ -321,12 +499,7 @@ async function handleShapePlaced(biologicalSex: string, x: number, y: number) {
     });
 
     // 3. Refresh full state
-    const detail = await api<{
-      individuals: PlacedIndividual[];
-      relationships: PlacedRelationship[];
-    }>(`/api/pedigrees/${pedigreeId}`);
-    individuals = detail.individuals;
-    relationships = detail.relationships ?? [];
+    await refreshState();
 
     // 4. Redraw
     render();
@@ -356,12 +529,7 @@ async function handleConnectionEnd(sourceId: string, targetId: string) {
     });
 
     // 3. Refresh full state
-    const detail = await api<{
-      individuals: PlacedIndividual[];
-      relationships: PlacedRelationship[];
-    }>(`/api/pedigrees/${pedigreeId}`);
-    individuals = detail.individuals;
-    relationships = detail.relationships ?? [];
+    await refreshState();
 
     // 4. Redraw
     render();
@@ -385,16 +553,88 @@ async function handleGroupDragEnd(movedIndividuals: { id: string; x: number; y: 
 
     // Refresh full state
     if (pedigreeId) {
-      const detail = await api<{
-        individuals: PlacedIndividual[];
-        relationships: PlacedRelationship[];
-      }>(`/api/pedigrees/${pedigreeId}`);
-      individuals = detail.individuals;
-      relationships = detail.relationships ?? [];
+      await refreshState();
       render();
     }
   } catch (err) {
     console.error("Failed to move individuals:", err);
+  }
+}
+
+// --- Shared state refresh ---
+
+async function refreshState() {
+  if (!pedigreeId) return;
+  const detail = await api<{
+    individuals: PlacedIndividual[];
+    relationships: PlacedRelationship[];
+    eggs: PlacedEgg[];
+  }>(`/api/pedigrees/${pedigreeId}`);
+  individuals = detail.individuals;
+  relationships = detail.relationships ?? [];
+  eggs = detail.eggs ?? [];
+}
+
+// --- Parental line handlers ---
+
+async function handleParentalLineFromRelationship(
+  relId: string,
+  childId: string,
+) {
+  if (!pedigreeId) return;
+  try {
+    await api(`/api/relationships/${relId}/offspring`, {
+      method: "POST",
+      body: JSON.stringify({
+        individual_id: childId,
+        pedigree_id: pedigreeId,
+      }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to add offspring from relationship:", err);
+    showToast("error" as Shape);
+  }
+}
+
+async function handleParentalLineFromIndividual(
+  parentId: string,
+  childId: string,
+) {
+  if (!pedigreeId) return;
+  try {
+    // Find existing 1-member relationship for this parent
+    let rel = relationships.find(
+      (r) => r.members.length === 1 && r.members[0] === parentId,
+    );
+
+    if (!rel) {
+      // Create a 1-member relationship
+      const newRel = await api<{ id: string }>("/api/relationships", {
+        method: "POST",
+        body: JSON.stringify({ members: [parentId] }),
+      });
+      // Add to pedigree
+      await api(
+        `/api/pedigrees/${pedigreeId}/relationships/${newRel.id}`,
+        { method: "POST" },
+      );
+      rel = { id: newRel.id, members: [parentId] };
+    }
+
+    await api(`/api/relationships/${rel.id}/offspring`, {
+      method: "POST",
+      body: JSON.stringify({
+        individual_id: childId,
+        pedigree_id: pedigreeId,
+      }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to add offspring from individual:", err);
+    showToast("error" as Shape);
   }
 }
 
@@ -406,6 +646,68 @@ function render() {
 
   ctx.lineWidth = 2;
 
+  // Draw relationship lines
+  for (const rel of relationships) {
+    if (rel.members.length < 2) continue;
+    const a = individuals.find((i) => i.id === rel.members[0]);
+    const b = individuals.find((i) => i.id === rel.members[1]);
+    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null)
+      continue;
+
+    const half = SHAPE_SIZE / 2;
+    const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+
+    ctx.beginPath();
+    ctx.moveTo(left.x + half, left.y);
+    ctx.lineTo(right.x - half, right.y);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Draw parental lines (egg connections)
+  for (const egg of eggs) {
+    if (!egg.relationship_id || !egg.individual_id) continue;
+
+    const rel = relationships.find((r) => r.id === egg.relationship_id);
+    if (!rel) continue;
+
+    // Compute origin based on relationship type
+    let origin: { x: number; y: number } | null = null;
+    const half = SHAPE_SIZE / 2;
+
+    if (rel.members.length >= 2) {
+      // 2-member: midpoint of couple line
+      origin = getRelationshipMidpoint(rel);
+    } else if (rel.members.length === 1) {
+      // 1-member: bottom of single parent
+      const parent = individuals.find((i) => i.id === rel.members[0]);
+      if (parent && parent.x != null && parent.y != null) {
+        origin = { x: parent.x, y: parent.y + half };
+      }
+    }
+
+    if (!origin) continue;
+
+    // Find child individual → target is top-center
+    const child = individuals.find((i) => i.id === egg.individual_id);
+    if (!child || child.x == null || child.y == null) continue;
+    const childTopX = child.x;
+    const childTopY = child.y - half;
+
+    // Draw orthogonal path: vertical → horizontal → vertical
+    const midY = (origin.y + childTopY) / 2;
+    ctx.beginPath();
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 2;
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(origin.x, midY);
+    ctx.lineTo(childTopX, midY);
+    ctx.lineTo(childTopX, childTopY);
+    ctx.stroke();
+  }
+
+  // Draw individual shapes
   for (const ind of individuals) {
     const { x, y, biological_sex } = ind;
     if (x == null || y == null) continue;
@@ -431,25 +733,6 @@ function render() {
       ctx.closePath();
     }
 
-    ctx.stroke();
-  }
-
-  // Draw relationship lines
-  for (const rel of relationships) {
-    if (rel.members.length < 2) continue;
-    const a = individuals.find((i) => i.id === rel.members[0]);
-    const b = individuals.find((i) => i.id === rel.members[1]);
-    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null)
-      continue;
-
-    const half = SHAPE_SIZE / 2;
-    const [left, right] = a.x <= b.x ? [a, b] : [b, a];
-
-    ctx.beginPath();
-    ctx.moveTo(left.x + half, left.y);
-    ctx.lineTo(right.x - half, right.y);
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 2;
     ctx.stroke();
   }
 }

@@ -17,6 +17,7 @@ def create_egg(body: EggCreate):
         notes=body.notes,
         properties=body.properties,
         individual_id=body.individual_id,
+        relationship_id=body.relationship_id,
     )
 
 
