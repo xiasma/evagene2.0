@@ -11,7 +11,7 @@ export interface FontSettings {
 }
 
 const defaultFont: FontSettings = {
-  family: "system-ui",
+  family: "Inter",
   size: 12,
   bold: false,
   italic: false,

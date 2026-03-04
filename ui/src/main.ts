@@ -52,23 +52,31 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="app-header">
     <h1>Evagene</h1>
-    <p>Pedigree management for clinical and research geneticists.</p>
+    <p>Pedigree editor</p>
     <div class="toolbar">
       <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
       <button id="btn-redo" title="Redo (Ctrl+Y)">Redo</button>
+      <span class="separator"></span>
       <button id="btn-grid" title="Toggle grid (Ctrl+G)">Grid</button>
       <button id="btn-find" title="Find (Ctrl+F)">Find</button>
-      <button id="btn-add-note" title="Add floating note">+ Note</button>
+      <button id="btn-add-note" title="Add floating note">Note</button>
       <button id="btn-toggle-notes" title="Show/hide all floating notes">Notes</button>
+      <span class="separator"></span>
+      <button id="btn-zoom-in" title="Zoom in">+</button>
+      <button id="btn-zoom-out" title="Zoom out">&minus;</button>
+      <button id="btn-zoom-reset" title="Reset zoom">1:1</button>
+      <span class="separator"></span>
+      <button id="btn-pedigree" title="Pedigree properties">Pedigree</button>
       <div class="font-settings">
-        <button id="btn-font">Font</button>
+        <button id="btn-font" title="Font settings">Font</button>
         <div id="font-popup" class="font-settings-popup">
           <label>Family</label>
           <select id="font-family">
-            <option value="system-ui">System UI</option>
+            <option value="Inter">Inter</option>
+            <option value="system-ui">System</option>
             <option value="Arial">Arial</option>
             <option value="Georgia">Georgia</option>
-            <option value="monospace">Monospace</option>
+            <option value="monospace">Mono</option>
           </select>
           <label>Size</label>
           <input id="font-size" type="number" min="8" max="24" value="12">
@@ -78,18 +86,13 @@ app.innerHTML = `
           </div>
         </div>
       </div>
-      <button id="btn-pedigree" title="Edit pedigree properties">Pedigree</button>
-      <button id="btn-theme" title="Toggle theme">Theme</button>
-      <span class="separator"></span>
-      <button id="btn-zoom-in" title="Zoom in">+</button>
-      <button id="btn-zoom-out" title="Zoom out">&minus;</button>
-      <button id="btn-zoom-reset" title="Reset zoom">1:1</button>
+      <button id="btn-theme" title="Toggle dark mode">Theme</button>
       <span class="separator"></span>
       <button id="btn-save" title="Save JSON">Save</button>
       <button id="btn-load" title="Load JSON">Load</button>
-      <button id="btn-export-ged" title="Export GEDCOM">Export .ged</button>
-      <button id="btn-import-ged" title="Import GEDCOM">Import .ged</button>
-      <button id="btn-import-xeg" title="Import XEG (Evagene v1)">Import .xeg</button>
+      <button id="btn-export-ged" title="Export GEDCOM">.ged</button>
+      <button id="btn-import-ged" title="Import GEDCOM">Import</button>
+      <button id="btn-import-xeg" title="Import XEG (Evagene v1)">.xeg</button>
     </div>
   </div>
   <input type="file" id="file-json" accept=".json" style="display:none">

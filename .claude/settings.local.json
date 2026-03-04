@@ -21,7 +21,11 @@
       "Bash(sed 's/\\\\.xaml$//')",
       "WebFetch(domain:humangenetics.medicine.uiowa.edu)",
       "WebSearch",
-      "WebFetch(domain:homepages.rootsweb.com)"
+      "WebFetch(domain:homepages.rootsweb.com)",
+      "WebFetch(domain:phenotips.com)",
+      "WebFetch(domain:pedigreetool.com)",
+      "WebFetch(domain:www.amytis.io)",
+      "Bash(sed:*)"
     ]
   }
 }
