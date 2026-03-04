@@ -279,6 +279,58 @@ class Store:
         ped.egg_ids.remove(egg_id)
         return True
 
+    def restore_pedigree_snapshot(
+        self,
+        ped_id: uuid.UUID,
+        snapshot_individuals: list[Individual],
+        snapshot_relationships: list[Relationship],
+        snapshot_eggs: list[Egg],
+    ) -> bool:
+        ped = self.pedigrees.get(ped_id)
+        if ped is None:
+            return False
+
+        # Remove all existing entities belonging to this pedigree
+        for iid in list(ped.individual_ids):
+            ind = self.individuals.pop(iid, None)
+            if ind:
+                for ev in ind.events:
+                    self._event_index.pop(ev.id, None)
+        for rid in list(ped.relationship_ids):
+            rel = self.relationships.pop(rid, None)
+            if rel:
+                for ev in rel.events:
+                    self._event_index.pop(ev.id, None)
+        for eid in list(ped.egg_ids):
+            egg = self.eggs.pop(eid, None)
+            if egg:
+                for ev in egg.events:
+                    self._event_index.pop(ev.id, None)
+
+        # Insert all entities from snapshot
+        ped.individual_ids = []
+        for ind in snapshot_individuals:
+            self.individuals[ind.id] = ind
+            ped.individual_ids.append(ind.id)
+            for i, ev in enumerate(ind.events):
+                self._event_index[ev.id] = (ind.id, i)
+
+        ped.relationship_ids = []
+        for rel in snapshot_relationships:
+            self.relationships[rel.id] = rel
+            ped.relationship_ids.append(rel.id)
+            for i, ev in enumerate(rel.events):
+                self._event_index[ev.id] = (rel.id, i)
+
+        ped.egg_ids = []
+        for egg in snapshot_eggs:
+            self.eggs[egg.id] = egg
+            ped.egg_ids.append(egg.id)
+            for i, ev in enumerate(egg.events):
+                self._event_index[ev.id] = (egg.id, i)
+
+        return True
+
     def get_pedigree_detail(self, id: uuid.UUID) -> PedigreeDetail | None:
         ped = self.pedigrees.get(id)
         if ped is None:

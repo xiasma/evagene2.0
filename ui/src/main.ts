@@ -1,7 +1,8 @@
 import "./style.css";
 import { recognise, centroid, Point, Shape } from "./recognise";
-import { drawIndividual, SymbolSpec } from "./symbols";
+import { drawIndividual, SymbolSpec, SymbolColors } from "./symbols";
 import { initPanel, openPanel, closePanel } from "./panel";
+import { cssVar, toggleTheme, fontSettings, updateFontSettings, getCanvasFontWithSize } from "./theme";
 
 // --- Types ---
 
@@ -13,6 +14,9 @@ interface PlacedIndividual {
   properties: Record<string, unknown>;
   proband: number;
   proband_text: string;
+  display_name: string;
+  name: { given?: string[]; family?: string; prefix?: string; suffix?: string };
+  notes: string;
 }
 
 interface PlacedRelationship {
@@ -28,21 +32,86 @@ interface PlacedEgg {
   properties: Record<string, unknown>;
 }
 
+interface FloatingNote {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
 // --- DOM ---
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
 app.innerHTML = `
-  <h1>Evagene</h1>
-  <p>Pedigree management for clinical and research geneticists.</p>
+  <div class="app-header">
+    <h1>Evagene</h1>
+    <p>Pedigree management for clinical and research geneticists.</p>
+    <div class="toolbar">
+      <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Y)">Redo</button>
+      <button id="btn-grid" title="Toggle grid (Ctrl+G)">Grid</button>
+      <button id="btn-find" title="Find (Ctrl+F)">Find</button>
+      <button id="btn-add-note" title="Add floating note">+ Note</button>
+      <button id="btn-toggle-notes" title="Show/hide all floating notes">Notes</button>
+      <div class="font-settings">
+        <button id="btn-font">Font</button>
+        <div id="font-popup" class="font-settings-popup">
+          <label>Family</label>
+          <select id="font-family">
+            <option value="system-ui">System UI</option>
+            <option value="Arial">Arial</option>
+            <option value="Georgia">Georgia</option>
+            <option value="monospace">Monospace</option>
+          </select>
+          <label>Size</label>
+          <input id="font-size" type="number" min="8" max="24" value="12">
+          <div class="font-row">
+            <input id="font-bold" type="checkbox"><label>Bold</label>
+            <input id="font-italic" type="checkbox"><label>Italic</label>
+          </div>
+        </div>
+      </div>
+      <button id="btn-theme" title="Toggle theme">Theme</button>
+    </div>
+  </div>
   <canvas id="canvas"></canvas>
   <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
+  <div id="find-bar" class="find-bar hidden">
+    <input id="find-input" type="text" placeholder="Search...">
+    <span id="find-count" class="find-count"></span>
+    <button id="find-prev" title="Previous (Shift+F3)">&lt;</button>
+    <button id="find-next" title="Next (F3)">&gt;</button>
+    <button id="find-all" title="Select all matches">All</button>
+    <button id="find-close" title="Close (Esc)">x</button>
+  </div>
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#canvas")!;
 const ctx = canvas.getContext("2d")!;
 const toast = document.querySelector<HTMLDivElement>("#toast")!;
+
+// Toolbar elements
+const btnUndo = document.getElementById("btn-undo") as HTMLButtonElement;
+const btnRedo = document.getElementById("btn-redo") as HTMLButtonElement;
+const btnGrid = document.getElementById("btn-grid") as HTMLButtonElement;
+const btnFind = document.getElementById("btn-find") as HTMLButtonElement;
+const btnAddNote = document.getElementById("btn-add-note") as HTMLButtonElement;
+const btnToggleNotes = document.getElementById("btn-toggle-notes") as HTMLButtonElement;
+const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
+const fontPopup = document.getElementById("font-popup") as HTMLDivElement;
+const btnTheme = document.getElementById("btn-theme") as HTMLButtonElement;
+
+// Find bar elements
+const findBar = document.getElementById("find-bar") as HTMLDivElement;
+const findInput = document.getElementById("find-input") as HTMLInputElement;
+const findCount = document.getElementById("find-count") as HTMLSpanElement;
+const findPrevBtn = document.getElementById("find-prev") as HTMLButtonElement;
+const findNextBtn = document.getElementById("find-next") as HTMLButtonElement;
+const findAllBtn = document.getElementById("find-all") as HTMLButtonElement;
+const findCloseBtn = document.getElementById("find-close") as HTMLButtonElement;
 
 // --- Constants ---
 
@@ -79,7 +148,6 @@ let clickHitId: string | null = null;
 let connecting = false;
 let connectSourceId: string | null = null;
 
-
 // Sibling bar Y offsets (relId → offset from default barY)
 const siblingBarOffsets = new Map<string, number>();
 // Chevron apex Y offsets (relId → offset from default apexY)
@@ -104,6 +172,70 @@ let parentalSource: {
   type: "child";
   indId: string;
 } | null = null;
+
+// --- Grid state ---
+const GRID_SIZE = SHAPE_SIZE;
+let snapToGrid = true;
+
+function snapXY(x: number, y: number): { x: number; y: number } {
+  if (!snapToGrid) return { x, y };
+  return {
+    x: Math.round(x / GRID_SIZE) * GRID_SIZE,
+    y: Math.round(y / GRID_SIZE) * GRID_SIZE,
+  };
+}
+
+// --- Undo/Redo state ---
+interface Snapshot {
+  individuals: PlacedIndividual[];
+  relationships: PlacedRelationship[];
+  eggs: PlacedEgg[];
+}
+
+const UNDO_LIMIT = 50;
+const undoStack: Snapshot[] = [];
+const redoStack: Snapshot[] = [];
+
+function captureSnapshot(): Snapshot {
+  return {
+    individuals: JSON.parse(JSON.stringify(individuals)),
+    relationships: JSON.parse(JSON.stringify(relationships)),
+    eggs: JSON.parse(JSON.stringify(eggs)),
+  };
+}
+
+function pushUndo(snap: Snapshot): void {
+  undoStack.push(snap);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+}
+
+// --- Clipboard state ---
+interface ClipboardData {
+  individuals: PlacedIndividual[];
+  relationships: PlacedRelationship[];
+  eggs: PlacedEgg[];
+  originCenter: { x: number; y: number };
+}
+
+let clipboard: ClipboardData | null = null;
+let lastMousePos = { x: 200, y: 200 };
+
+// --- Find state ---
+let findOpen = false;
+let findResults: string[] = [];
+let findIndex = 0;
+
+// --- Floating notes state ---
+let floatingNotes: FloatingNote[] = [];
+let showAllFloatingNotes = true;
+let selectedNoteId: string | null = null;
+let draggingNoteId: string | null = null;
+let noteDragOffset = { dx: 0, dy: 0 };
+
+// --- Note drag (per-individual on-canvas notes) ---
+let draggingIndNoteId: string | null = null;
+let indNoteDragOffset = { dx: 0, dy: 0 };
 
 // --- Canvas sizing ---
 
@@ -157,6 +289,9 @@ initPanel({
     render();
   },
   api,
+  onBeforeMutation: () => {
+    pushUndo(captureSnapshot());
+  },
 });
 
 // --- Side hit-test for connection drawing ---
@@ -424,6 +559,50 @@ function hitChevronApex(pos: Point): { relId: string } | null {
   return null;
 }
 
+// --- Floating note hit-test ---
+
+const NOTE_WIDTH = 140;
+const NOTE_LINE_HEIGHT = 14;
+const NOTE_PADDING = 8;
+
+function getNoteBounds(note: FloatingNote): { x: number; y: number; w: number; h: number } {
+  const lines = (note.text || "").split("\n");
+  const h = Math.max(NOTE_LINE_HEIGHT * lines.length + NOTE_PADDING * 2, 30);
+  return { x: note.x, y: note.y, w: NOTE_WIDTH, h };
+}
+
+function hitFloatingNote(pos: Point): FloatingNote | null {
+  if (!showAllFloatingNotes) return null;
+  for (const note of floatingNotes) {
+    if (!note.visible) continue;
+    const b = getNoteBounds(note);
+    if (pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
+      return note;
+    }
+  }
+  return null;
+}
+
+// --- Individual note hit-test ---
+
+function hitIndividualNote(pos: Point): PlacedIndividual | null {
+  for (const ind of individuals) {
+    if (ind.x == null || ind.y == null) continue;
+    if (!ind.properties?.show_notes || !ind.notes) continue;
+    const offsetX = (ind.properties.note_offset_x as number) ?? 0;
+    const offsetY = (ind.properties.note_offset_y as number) ?? SHAPE_SIZE;
+    const noteX = ind.x + offsetX;
+    const noteY = ind.y + offsetY;
+    const lines = wrapText(ind.notes, 120);
+    const w = 120;
+    const h = lines.length * 14 + 4;
+    if (pos.x >= noteX - 2 && pos.x <= noteX + w + 2 && pos.y >= noteY - 2 && pos.y <= noteY + h + 2) {
+      return ind;
+    }
+  }
+  return null;
+}
+
 // --- Drawing handlers ---
 
 function beginStroke(pos: Point) {
@@ -431,7 +610,7 @@ function beginStroke(pos: Point) {
   points = [pos];
   ctx.beginPath();
   ctx.moveTo(pos.x, pos.y);
-  ctx.strokeStyle = "#334155";
+  ctx.strokeStyle = cssVar("--color-stroke");
   ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -442,6 +621,26 @@ canvas.addEventListener("pointerdown", (e) => {
   const pos = pointerPos(e);
   pointerMoved = false;
   clickHitId = null;
+
+  // Priority 0a: Floating note drag
+  const noteHit = hitFloatingNote(pos);
+  if (noteHit) {
+    selectedNoteId = noteHit.id;
+    draggingNoteId = noteHit.id;
+    noteDragOffset = { dx: noteHit.x - pos.x, dy: noteHit.y - pos.y };
+    render();
+    return;
+  }
+
+  // Priority 0b: Individual note drag
+  const indNoteHit = hitIndividualNote(pos);
+  if (indNoteHit) {
+    draggingIndNoteId = indNoteHit.id;
+    const offsetX = (indNoteHit.properties.note_offset_x as number) ?? 0;
+    const offsetY = (indNoteHit.properties.note_offset_y as number) ?? SHAPE_SIZE;
+    indNoteDragOffset = { dx: (indNoteHit.x + offsetX) - pos.x, dy: (indNoteHit.y + offsetY) - pos.y };
+    return;
+  }
 
   // Priority 1: Hit bottom of individual → parental line from parent
   const bottomHit = hitBottom(pos);
@@ -532,6 +731,7 @@ canvas.addEventListener("pointerdown", (e) => {
     // Hit an unselected shape → clear lasso selection, single drag
     clickHitId = hit.id;
     selectedIds = new Set();
+    selectedNoteId = null;
     dragging = true;
     groupDragOffsets = new Map();
     groupDragOffsets.set(hit.id, { dx: hit.x - pos.x, dy: hit.y - pos.y });
@@ -540,6 +740,7 @@ canvas.addEventListener("pointerdown", (e) => {
     // Hit nothing → clear all selection, close panel, enter draw mode
     selectedIds = new Set();
     selectedIndividualId = null;
+    selectedNoteId = null;
     closePanel();
     render();
     beginStroke(pos);
@@ -548,9 +749,32 @@ canvas.addEventListener("pointerdown", (e) => {
 
 canvas.addEventListener("pointermove", (e) => {
   pointerMoved = true;
+  const pos = pointerPos(e);
+  lastMousePos = pos;
+
+  // Floating note drag
+  if (draggingNoteId) {
+    const note = floatingNotes.find((n) => n.id === draggingNoteId);
+    if (note) {
+      note.x = pos.x + noteDragOffset.dx;
+      note.y = pos.y + noteDragOffset.dy;
+      render();
+    }
+    return;
+  }
+
+  // Individual note drag
+  if (draggingIndNoteId) {
+    const ind = individuals.find((i) => i.id === draggingIndNoteId);
+    if (ind && ind.x != null && ind.y != null) {
+      ind.properties.note_offset_x = (pos.x + indNoteDragOffset.dx) - ind.x;
+      ind.properties.note_offset_y = (pos.y + indNoteDragOffset.dy) - ind.y;
+      render();
+    }
+    return;
+  }
 
   if ((draggingBar || draggingApex) && dragRelId) {
-    const pos = pointerPos(e);
     const newOffset = dragStartOffset + (pos.y - dragStartMouseY);
     if (draggingBar) {
       siblingBarOffsets.set(dragRelId, newOffset);
@@ -562,7 +786,6 @@ canvas.addEventListener("pointermove", (e) => {
   }
 
   if (dragging && groupDragOffsets.size > 0) {
-    const pos = pointerPos(e);
     for (const [id, offset] of groupDragOffsets) {
       const ind = individuals.find((i) => i.id === id);
       if (ind) {
@@ -575,7 +798,6 @@ canvas.addEventListener("pointermove", (e) => {
   }
 
   if (!drawing) return;
-  const pos = pointerPos(e);
   points.push(pos);
   ctx.lineTo(pos.x, pos.y);
   ctx.stroke();
@@ -584,6 +806,29 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", () => {
+  // Floating note drag end
+  if (draggingNoteId) {
+    const note = floatingNotes.find((n) => n.id === draggingNoteId);
+    draggingNoteId = null;
+    if (note && pedigreeId) {
+      patchFloatingNotes();
+    }
+    return;
+  }
+
+  // Individual note drag end
+  if (draggingIndNoteId) {
+    const ind = individuals.find((i) => i.id === draggingIndNoteId);
+    draggingIndNoteId = null;
+    if (ind) {
+      api(`/api/individuals/${ind.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ properties: ind.properties }),
+      });
+    }
+    return;
+  }
+
   // Bar / apex drag end
   if (draggingBar || draggingApex) {
     draggingBar = false;
@@ -597,6 +842,7 @@ canvas.addEventListener("pointerup", () => {
 
     selectedIndividualId = clickHitId;
     selectedIds = new Set();
+    selectedNoteId = null;
     dragging = false;
     groupDragOffsets = new Map();
     drawing = false;
@@ -613,12 +859,16 @@ canvas.addEventListener("pointerup", () => {
     for (const id of groupDragOffsets.keys()) {
       const ind = individuals.find((i) => i.id === id);
       if (ind) {
+        const snapped = snapXY(ind.x, ind.y);
+        ind.x = snapped.x;
+        ind.y = snapped.y;
         movedIndividuals.push({ id: ind.id, x: ind.x, y: ind.y });
       }
     }
     dragging = false;
     groupDragOffsets = new Map();
     if (movedIndividuals.length > 0) {
+      pushUndo(captureSnapshot());
       handleGroupDragEnd(movedIndividuals);
     }
     return;
@@ -650,6 +900,7 @@ canvas.addEventListener("pointerup", () => {
         const child = hitIndividual(endpoint);
         if (child) {
           render();
+          pushUndo(captureSnapshot());
           handleParentalLineFromRelationship(source.relId, child.id);
         } else {
           rejectStroke(points);
@@ -658,6 +909,7 @@ canvas.addEventListener("pointerup", () => {
         const child = hitIndividual(endpoint);
         if (child && child.id !== source.indId) {
           render();
+          pushUndo(captureSnapshot());
           handleParentalLineFromIndividual(source.indId, child.id);
         } else {
           rejectStroke(points);
@@ -670,12 +922,14 @@ canvas.addEventListener("pointerup", () => {
           const isChevron = detectChevron(points);
           console.log("[TWIN] isChevron:", isChevron, "indA:", source.indId, "indB:", topTarget.id);
           render();
+          pushUndo(captureSnapshot());
           handleSiblingConnection(source.indId, topTarget.id, isChevron);
         } else {
           // Reverse: child → relationship line
           const relTarget = hitRelationshipLine(endpoint);
           if (relTarget) {
             render();
+            pushUndo(captureSnapshot());
             handleParentalLineFromRelationship(relTarget.id, source.indId);
           } else {
             rejectStroke(points);
@@ -696,6 +950,7 @@ canvas.addEventListener("pointerup", () => {
       const endpoint = points[points.length - 1];
       const target = hitSide(endpoint);
       if (target && sourceId && target.id !== sourceId && !hasRelationship(sourceId, target.id)) {
+        pushUndo(captureSnapshot());
         handleConnectionEnd(sourceId, target.id);
       } else {
         rejectStroke(points);
@@ -729,7 +984,7 @@ canvas.addEventListener("pointerup", () => {
       );
 
       if (enclosed.length > 0) {
-    
+
         selectedIds = new Set(enclosed.map((ind) => ind.id));
         selectedIndividualId = null;
         closePanel();
@@ -768,11 +1023,23 @@ canvas.addEventListener("pointerup", () => {
   }
 
   const center = centroid(points);
+  const snapped = snapXY(center.x, center.y);
 
   // Immediately clear freehand stroke and show perfect shape
   render();
 
-  handleShapePlaced(sex, center.x, center.y);
+  pushUndo(captureSnapshot());
+  handleShapePlaced(sex, snapped.x, snapped.y);
+});
+
+// Double-click on floating note → edit
+canvas.addEventListener("dblclick", (e) => {
+  const pos = pointerPos(e);
+  const noteHit = hitFloatingNote(pos);
+  if (noteHit) {
+    openNoteEditor(noteHit);
+    return;
+  }
 });
 
 // --- Shape placement pipeline ---
@@ -866,10 +1133,13 @@ async function refreshState() {
     individuals: PlacedIndividual[];
     relationships: PlacedRelationship[];
     eggs: PlacedEgg[];
+    properties: Record<string, unknown>;
   }>(`/api/pedigrees/${pedigreeId}`);
   individuals = detail.individuals;
   relationships = detail.relationships ?? [];
   eggs = detail.eggs ?? [];
+  // Load floating notes from pedigree properties
+  floatingNotes = (detail.properties?.floating_notes as FloatingNote[]) ?? [];
 }
 
 // --- Parental line handlers ---
@@ -939,8 +1209,6 @@ async function handleParentalLineFromIndividual(
 
 /**
  * Detect if a stroke forms a chevron (inverted-V) rather than a stepped line.
- * A chevron has a sharp peak with diagonal arms. A stepped line has a long
- * horizontal segment at the top.
  */
 function detectChevron(pts: Point[]): boolean {
   if (pts.length < 5) return false;
@@ -964,8 +1232,6 @@ function detectChevron(pts: Point[]): boolean {
   const rise = Math.min(startY - peakY, endY - peakY);
   if (rise < 20) return false;
 
-  // Measure how much of the stroke is spent near the peak Y (within 30% of rise).
-  // A stepped line has a long flat segment at the top; a chevron has a sharp peak.
   const flatThreshold = peakY + rise * 0.3;
   let flatCount = 0;
   for (const pt of pts) {
@@ -973,8 +1239,6 @@ function detectChevron(pts: Point[]): boolean {
   }
   const flatRatio = flatCount / pts.length;
 
-  // Chevron: only a small fraction of points near the peak (<30%)
-  // Stepped line: many points near the top (>30%)
   const result = flatRatio < 0.30;
   console.log("[CHEVRON] rise:", rise.toFixed(1), "flatRatio:", flatRatio.toFixed(2), "→", result);
   return result;
@@ -1094,13 +1358,11 @@ async function handleSiblingConnection(
       }
     } else {
       // Distinct siblings: add second child under shared parent relationship
-      // (no-parent case already handled above — resolvedRelA is set)
       const targetRel = resolvedRelA ?? resolvedRelB;
       if (!targetRel) {
         rejectStroke(points);
         return;
       }
-      // If indB is already under targetRel, check the other direction
       if (hasEggUnder(indBId, targetRel.id) && hasEggUnder(indAId, targetRel.id)) {
         render();
         return;
@@ -1137,6 +1399,7 @@ async function handleSiblingConnection(
 
 async function deleteIndividuals(ids: string[]) {
   if (!pedigreeId || ids.length === 0) return;
+  pushUndo(captureSnapshot());
   try {
     for (const id of ids) {
       // 1. Delete eggs where this individual is the child
@@ -1169,32 +1432,416 @@ async function deleteIndividuals(ids: string[]) {
   }
 }
 
-// --- Keyboard delete ---
+// --- Undo/Redo execution ---
+
+async function undo() {
+  if (undoStack.length === 0 || !pedigreeId) return;
+  const snap = undoStack.pop()!;
+  redoStack.push(captureSnapshot());
+  try {
+    await api(`/api/pedigrees/${pedigreeId}/restore`, {
+      method: "PUT",
+      body: JSON.stringify({
+        individuals: snap.individuals,
+        relationships: snap.relationships,
+        eggs: snap.eggs,
+      }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Undo failed:", err);
+  }
+}
+
+async function redo() {
+  if (redoStack.length === 0 || !pedigreeId) return;
+  const snap = redoStack.pop()!;
+  undoStack.push(captureSnapshot());
+  try {
+    await api(`/api/pedigrees/${pedigreeId}/restore`, {
+      method: "PUT",
+      body: JSON.stringify({
+        individuals: snap.individuals,
+        relationships: snap.relationships,
+        eggs: snap.eggs,
+      }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Redo failed:", err);
+  }
+}
+
+// --- Clipboard ---
+
+function copySelection(): void {
+  const ids = new Set<string>(selectedIds);
+  if (selectedIndividualId) ids.add(selectedIndividualId);
+  if (ids.size === 0) return;
+
+  const copiedInds = individuals.filter((i) => ids.has(i.id));
+  const copiedRels = relationships.filter((r) =>
+    r.members.every((m) => ids.has(m)),
+  );
+  const copiedRelIds = new Set(copiedRels.map((r) => r.id));
+  const copiedEggs = eggs.filter(
+    (e) =>
+      (e.individual_id && ids.has(e.individual_id)) &&
+      (e.relationship_id && copiedRelIds.has(e.relationship_id)),
+  );
+
+  // Compute centroid
+  const placed = copiedInds.filter((i) => i.x != null && i.y != null);
+  const cx = placed.length > 0 ? placed.reduce((s, i) => s + i.x, 0) / placed.length : 0;
+  const cy = placed.length > 0 ? placed.reduce((s, i) => s + i.y, 0) / placed.length : 0;
+
+  clipboard = {
+    individuals: JSON.parse(JSON.stringify(copiedInds)),
+    relationships: JSON.parse(JSON.stringify(copiedRels)),
+    eggs: JSON.parse(JSON.stringify(copiedEggs)),
+    originCenter: { x: cx, y: cy },
+  };
+}
+
+async function paste(): Promise<void> {
+  if (!clipboard || !pedigreeId) return;
+  pushUndo(captureSnapshot());
+
+  const idMap = new Map<string, string>();
+
+  try {
+    // Create individuals with new IDs
+    for (const ind of clipboard.individuals) {
+      const offsetX = lastMousePos.x - clipboard.originCenter.x;
+      const offsetY = lastMousePos.y - clipboard.originCenter.y;
+      let newX = (ind.x ?? 0) + offsetX;
+      let newY = (ind.y ?? 0) + offsetY;
+      const snapped = snapXY(newX, newY);
+      newX = snapped.x;
+      newY = snapped.y;
+
+      const created = await api<{ id: string }>("/api/individuals", {
+        method: "POST",
+        body: JSON.stringify({
+          biological_sex: ind.biological_sex,
+          x: newX,
+          y: newY,
+          display_name: ind.display_name,
+          notes: ind.notes,
+          properties: ind.properties,
+        }),
+      });
+      idMap.set(ind.id, created.id);
+      await api(`/api/pedigrees/${pedigreeId}/individuals/${created.id}`, {
+        method: "POST",
+      });
+    }
+
+    // Create relationships with remapped members
+    for (const rel of clipboard.relationships) {
+      const newMembers = rel.members.map((m) => idMap.get(m) ?? m);
+      const created = await api<{ id: string }>("/api/relationships", {
+        method: "POST",
+        body: JSON.stringify({ members: newMembers, properties: rel.properties }),
+      });
+      idMap.set(rel.id, created.id);
+      await api(`/api/pedigrees/${pedigreeId}/relationships/${created.id}`, {
+        method: "POST",
+      });
+    }
+
+    // Create eggs with remapped references
+    for (const egg of clipboard.eggs) {
+      const newIndId = egg.individual_id ? idMap.get(egg.individual_id) ?? egg.individual_id : null;
+      const newRelId = egg.relationship_id ? idMap.get(egg.relationship_id) ?? egg.relationship_id : null;
+      const created = await api<{ id: string }>("/api/eggs", {
+        method: "POST",
+        body: JSON.stringify({
+          individual_id: newIndId,
+          relationship_id: newRelId,
+          properties: egg.properties,
+        }),
+      });
+      await api(`/api/pedigrees/${pedigreeId}/eggs/${created.id}`, {
+        method: "POST",
+      });
+    }
+
+    // Select pasted entities
+    selectedIds = new Set(
+      clipboard.individuals.map((i) => idMap.get(i.id)!).filter(Boolean),
+    );
+    selectedIndividualId = null;
+
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Paste failed:", err);
+  }
+}
+
+function cutSelection(): void {
+  const ids = new Set<string>(selectedIds);
+  if (selectedIndividualId) ids.add(selectedIndividualId);
+  if (ids.size === 0) return;
+  copySelection();
+  deleteIndividuals([...ids]);
+}
+
+// --- Find logic ---
+
+function runFind(): void {
+  const query = findInput.value.trim().toLowerCase();
+  if (!query) {
+    findResults = [];
+    findIndex = 0;
+    findCount.textContent = "";
+    render();
+    return;
+  }
+
+  findResults = individuals
+    .filter((ind) => {
+      const fields = [
+        ind.display_name,
+        ind.name?.given?.join(" "),
+        ind.name?.family,
+        ind.notes,
+        ...Object.values(ind.properties ?? {}).map(String),
+      ];
+      return fields.some((f) => f && f.toLowerCase().includes(query));
+    })
+    .map((i) => i.id);
+
+  findIndex = findResults.length > 0 ? 0 : -1;
+  updateFindCount();
+  render();
+}
+
+function updateFindCount(): void {
+  if (findResults.length === 0) {
+    findCount.textContent = findInput.value ? "0" : "";
+  } else {
+    findCount.textContent = `${findIndex + 1}/${findResults.length}`;
+  }
+}
+
+function findNext(): void {
+  if (findResults.length === 0) return;
+  findIndex = (findIndex + 1) % findResults.length;
+  updateFindCount();
+  render();
+}
+
+function findPrev(): void {
+  if (findResults.length === 0) return;
+  findIndex = (findIndex - 1 + findResults.length) % findResults.length;
+  updateFindCount();
+  render();
+}
+
+function openFind(): void {
+  findOpen = true;
+  findBar.classList.remove("hidden");
+  findInput.focus();
+  findInput.select();
+}
+
+function closeFind(): void {
+  findOpen = false;
+  findBar.classList.add("hidden");
+  findResults = [];
+  findIndex = 0;
+  render();
+}
+
+// --- Floating notes ---
+
+function generateNoteId(): string {
+  return "note-" + Math.random().toString(36).slice(2, 10);
+}
+
+function addFloatingNote(): void {
+  if (!pedigreeId) return;
+  pushUndo(captureSnapshot());
+  const rect = canvas.getBoundingClientRect();
+  const note: FloatingNote = {
+    id: generateNoteId(),
+    text: "New note",
+    x: rect.width / 2 - NOTE_WIDTH / 2,
+    y: rect.height / 2 - 20,
+    visible: true,
+  };
+  floatingNotes.push(note);
+  selectedNoteId = note.id;
+  patchFloatingNotes();
+  render();
+}
+
+function deleteSelectedNote(): void {
+  if (!selectedNoteId) return;
+  pushUndo(captureSnapshot());
+  floatingNotes = floatingNotes.filter((n) => n.id !== selectedNoteId);
+  selectedNoteId = null;
+  patchFloatingNotes();
+  render();
+}
+
+async function patchFloatingNotes(): Promise<void> {
+  if (!pedigreeId) return;
+  try {
+    await api(`/api/pedigrees/${pedigreeId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ properties: { floating_notes: floatingNotes } }),
+    });
+  } catch (err) {
+    console.error("Failed to save floating notes:", err);
+  }
+}
+
+function openNoteEditor(note: FloatingNote): void {
+  // Remove any existing overlay
+  document.querySelectorAll(".note-overlay").forEach((el) => el.remove());
+
+  const canvasRect = canvas.getBoundingClientRect();
+  const overlay = document.createElement("div");
+  overlay.className = "note-overlay";
+  overlay.style.left = `${canvasRect.left + note.x}px`;
+  overlay.style.top = `${canvasRect.top + note.y}px`;
+
+  const ta = document.createElement("textarea");
+  ta.className = "note-overlay-textarea";
+  ta.value = note.text;
+  ta.style.width = `${NOTE_WIDTH + 20}px`;
+  ta.style.minHeight = "60px";
+  ta.style.fontFamily = "inherit";
+  ta.style.fontSize = "0.8rem";
+  ta.style.padding = "0.4rem";
+  ta.style.border = `1px solid ${cssVar("--color-accent")}`;
+  ta.style.borderRadius = "4px";
+  ta.style.background = cssVar("--color-surface");
+  ta.style.color = cssVar("--color-text");
+  ta.style.outline = "none";
+  ta.style.resize = "both";
+
+  overlay.appendChild(ta);
+  document.body.appendChild(overlay);
+  ta.focus();
+  ta.select();
+
+  const save = () => {
+    note.text = ta.value;
+    overlay.remove();
+    patchFloatingNotes();
+    render();
+  };
+
+  ta.addEventListener("blur", save);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      ta.removeEventListener("blur", save);
+      overlay.remove();
+    }
+  });
+}
+
+// --- Keyboard handler ---
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Delete" || e.key === "Backspace") {
-    // Don't intercept if user is typing in an input/textarea
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  // Don't intercept if user is typing in an input/textarea
+  const tag = (e.target as HTMLElement)?.tagName;
+  const isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 
+  // Find bar shortcuts (always active when find is open)
+  if (findOpen) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeFind();
+      return;
+    }
+    if (e.key === "Enter" || e.key === "F3") {
+      e.preventDefault();
+      if (e.shiftKey) findPrev(); else findNext();
+      return;
+    }
+  }
+
+  if (isInput) return;
+
+  // Delete
+  if (e.key === "Delete" || e.key === "Backspace") {
+    // Delete floating note if selected
+    if (selectedNoteId) {
+      e.preventDefault();
+      deleteSelectedNote();
+      return;
+    }
     const ids = new Set<string>(selectedIds);
     if (selectedIndividualId) ids.add(selectedIndividualId);
     if (ids.size === 0) return;
-
     e.preventDefault();
     deleteIndividuals([...ids]);
+    return;
+  }
+
+  // Ctrl shortcuts
+  if (e.ctrlKey || e.metaKey) {
+    switch (e.key.toLowerCase()) {
+      case "z":
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      case "y":
+        e.preventDefault();
+        redo();
+        return;
+      case "a":
+        e.preventDefault();
+        selectedIds = new Set(individuals.map((i) => i.id));
+        selectedIndividualId = null;
+        render();
+        return;
+      case "i":
+        if (e.shiftKey) {
+          e.preventDefault();
+          const allIds = new Set(individuals.map((i) => i.id));
+          const current = new Set(selectedIds);
+          if (selectedIndividualId) current.add(selectedIndividualId);
+          selectedIds = new Set([...allIds].filter((id) => !current.has(id)));
+          selectedIndividualId = null;
+          render();
+        }
+        return;
+      case "c":
+        e.preventDefault();
+        copySelection();
+        return;
+      case "x":
+        e.preventDefault();
+        cutSelection();
+        return;
+      case "v":
+        e.preventDefault();
+        paste();
+        return;
+      case "f":
+        e.preventDefault();
+        openFind();
+        return;
+      case "g":
+        e.preventDefault();
+        snapToGrid = !snapToGrid;
+        btnGrid.classList.toggle("active", snapToGrid);
+        render();
+        return;
+    }
   }
 });
 
-// --- Scribble delete helpers ---
-
 // --- Diagonal stroke → death / suicide ---
 
-/**
- * Detect a roughly straight diagonal stroke that passes through an individual.
- * - Alive → dead
- * - Dead + stroke is NW→SE or SE→NW → suicide_confirmed (adds the second diagonal)
- */
 function tryDiagonalStroke(pts: Point[]): boolean {
   const first = pts[0];
   const last = pts[pts.length - 1];
@@ -1202,30 +1849,24 @@ function tryDiagonalStroke(pts: Point[]): boolean {
   const dy = last.y - first.y;
   const len = Math.hypot(dx, dy);
 
-  // Stroke must be long enough and roughly straight
   if (len < SHAPE_SIZE * 0.6) return false;
 
-  // Check straightness: max deviation from the start→end line
   let maxDev = 0;
   for (const pt of pts) {
-    // Distance from point to line (first→last)
     const dev = Math.abs((last.y - first.y) * pt.x - (last.x - first.x) * pt.y + last.x * first.y - last.y * first.x) / len;
     if (dev > maxDev) maxDev = dev;
   }
   if (maxDev > SHAPE_SIZE * 0.4) return false;
 
-  // Must be diagonal (not horizontal/vertical): angle between 20° and 70° from horizontal
   const angle = Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx)));
-  if (angle < 0.35 || angle > 1.22) return false; // ~20° to ~70°
+  if (angle < 0.35 || angle > 1.22) return false;
 
-  // Find individual whose center is close to the stroke line
   const hitRadius = SHAPE_SIZE / 2 + 4;
   let hitInd: PlacedIndividual | null = null;
   for (const ind of individuals) {
     if (ind.x == null || ind.y == null) continue;
     const dist = Math.abs((last.y - first.y) * ind.x - (last.x - first.x) * ind.y + last.x * first.y - last.y * first.x) / len;
     if (dist > hitRadius) continue;
-    // Also check that the stroke actually spans across the individual (not just nearby)
     const t = ((ind.x - first.x) * dx + (ind.y - first.y) * dy) / (len * len);
     if (t < -0.1 || t > 1.1) continue;
     hitInd = ind;
@@ -1236,19 +1877,17 @@ function tryDiagonalStroke(pts: Point[]): boolean {
   const currentStatus = (hitInd.properties?.death_status as string) ?? "alive";
 
   if (currentStatus === "alive" || currentStatus === "unknown") {
-    // Make dead
     render();
+    pushUndo(captureSnapshot());
     handleSetDeathStatus(hitInd.id, "dead");
     return true;
   }
 
   if (currentStatus === "dead") {
-    // Check if stroke is NW→SE or SE→NW (the second diagonal for the X)
-    // NW→SE: dx > 0 && dy > 0, or SE→NW: dx < 0 && dy < 0
-    // This is the "\" direction — same sign for dx and dy
     const isSameSign = (dx > 0 && dy > 0) || (dx < 0 && dy < 0);
     if (isSameSign) {
       render();
+      pushUndo(captureSnapshot());
       handleSetDeathStatus(hitInd.id, "suicide_confirmed");
       return true;
     }
@@ -1275,15 +1914,10 @@ async function handleSetDeathStatus(indId: string, status: string) {
 
 // --- Scribble delete helpers ---
 
-const SCRIBBLE_MIN_PASSES = 3; // must cross through an entity at least 3 times
+const SCRIBBLE_MIN_PASSES = 3;
 
-/**
- * For each individual, count how many separate "passes" the stroke makes
- * through its hit zone. A pass = a contiguous run of points inside the zone.
- * Returns IDs of individuals with >= SCRIBBLE_MIN_PASSES passes.
- */
 function tryScribbleDelete(pts: Point[]): boolean {
-  if (pts.length < 10) return false; // too short to be a scribble
+  if (pts.length < 10) return false;
 
   const hitRadius = SHAPE_SIZE / 2 + 4;
   const scribbledIds: string[] = [];
@@ -1304,7 +1938,6 @@ function tryScribbleDelete(pts: Point[]): boolean {
 
   if (scribbledIds.length === 0) return false;
 
-  // Flash red then delete
   flashAndDelete(scribbledIds);
   return true;
 }
@@ -1312,7 +1945,7 @@ function tryScribbleDelete(pts: Point[]): boolean {
 function flashAndDelete(ids: string[]) {
   render();
   const half = SHAPE_SIZE / 2;
-  ctx.strokeStyle = "#ef4444";
+  ctx.strokeStyle = cssVar("--color-danger");
   ctx.lineWidth = 3;
   for (const id of ids) {
     const ind = individuals.find((i) => i.id === id);
@@ -1327,16 +1960,14 @@ function flashAndDelete(ids: string[]) {
 // --- Monozygotic detection ---
 
 function tryMarkMonozygotic(pts: Point[]): boolean {
-  // Stroke must be roughly horizontal
   const first = pts[0];
   const last = pts[pts.length - 1];
   const dx = Math.abs(last.x - first.x);
   const dy = Math.abs(last.y - first.y);
-  if (dx < 10 || dy > dx * 1.0) return false; // generous: allow up to 45° slope
+  if (dx < 10 || dy > dx * 1.0) return false;
 
   const half = SHAPE_SIZE / 2;
 
-  // Check each twin group
   const eggsByRel = new Map<string, PlacedEgg[]>();
   for (const egg of eggs) {
     if (!egg.relationship_id || !egg.individual_id || !egg.properties?.twin) continue;
@@ -1365,13 +1996,9 @@ function tryMarkMonozygotic(pts: Point[]): boolean {
     const apexY = info.apexY;
     const minTopY = Math.min(...twinChildren.map((c) => c.ind!.y - half));
 
-    // Check if ANY stroke point falls between the chevron arms
     let hitCount = 0;
     for (const pt of pts) {
-      // Y must be between apex and children (with padding)
       if (pt.y < apexY - 5 || pt.y > minTopY + 5) continue;
-
-      // Check if X is between the two arm positions at this Y
       const frac = (pt.y - apexY) / (minTopY - apexY);
       if (frac <= 0) continue;
       const armXs = twinChildren.map((tc) => info.apexX + (tc.ind!.x - info.apexX) * frac);
@@ -1380,8 +2007,8 @@ function tryMarkMonozygotic(pts: Point[]): boolean {
       if (pt.x >= armLeft && pt.x <= armRight) hitCount++;
     }
 
-    // If a decent portion of the stroke passes through the chevron area
     if (hitCount >= Math.min(pts.length * 0.3, 5)) {
+      pushUndo(captureSnapshot());
       handleMarkMonozygotic(twinEggs);
       return true;
     }
@@ -1440,7 +2067,6 @@ const SEX_LABELS: Record<string, string> = {
 
 async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
   try {
-    // Check if twin individuals have different sexes
     const twinInds = twinEggs
       .map((e) => individuals.find((i) => i.id === e.individual_id))
       .filter((i): i is PlacedIndividual => i != null);
@@ -1448,7 +2074,6 @@ async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
     const sexes = new Set(twinInds.map((i) => i.biological_sex ?? "unknown"));
 
     if (sexes.size > 1) {
-      // Sex conflict — ask the user
       const distinctSexes = [...sexes];
       const options: { label: string; value: string; primary?: boolean }[] = distinctSexes.map((s, i) => ({
         label: `Set both to ${SEX_LABELS[s] ?? s}`,
@@ -1464,7 +2089,6 @@ async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
       );
 
       if (choice !== "_ignore") {
-        // Update both individuals to the chosen sex
         await Promise.all(
           twinInds.map((ind) =>
             api(`/api/individuals/${ind.id}`, {
@@ -1476,7 +2100,6 @@ async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
       }
     }
 
-    // Mark all twin eggs as monozygotic
     await Promise.all(
       twinEggs.map((egg) =>
         api(`/api/eggs/${egg.id}`, {
@@ -1494,11 +2117,64 @@ async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
   }
 }
 
+// --- Text wrapping helper ---
+
+function wrapText(text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    const words = rawLine.split(/\s+/);
+    let current = "";
+    for (const word of words) {
+      const test = current ? current + " " + word : word;
+      // Rough char-width estimate: ~7px per char at 11px font
+      if (test.length * 7 > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
 // --- Rendering ---
 
 function render() {
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
+
+  // Read theme colors
+  const strokeColor = cssVar("--color-stroke");
+  const strokeSelectedColor = cssVar("--color-stroke-selected");
+  const gridColor = cssVar("--color-grid");
+  const findHighlightColor = cssVar("--color-find-highlight");
+  const findCurrentColor = cssVar("--color-find-current");
+
+  const symbolColors: SymbolColors = {
+    stroke: strokeColor,
+    strokeSelected: strokeSelectedColor,
+    fill: strokeColor,
+  };
+
+  // Draw grid
+  if (snapToGrid) {
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < rect.width; x += GRID_SIZE) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, rect.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < rect.height; y += GRID_SIZE) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(rect.width, y);
+      ctx.stroke();
+    }
+  }
 
   ctx.lineWidth = 2;
 
@@ -1516,13 +2192,12 @@ function render() {
     ctx.beginPath();
     ctx.moveTo(left.x + half, left.y);
     ctx.lineTo(right.x - half, right.y);
-    ctx.strokeStyle = "#334155";
+    ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 2;
     ctx.stroke();
   }
 
   // Draw parental lines (egg connections)
-  // Group eggs by relationship_id to detect twins
   const eggsByRel = new Map<string, PlacedEgg[]>();
   for (const egg of eggs) {
     if (!egg.relationship_id || !egg.individual_id) continue;
@@ -1545,7 +2220,6 @@ function render() {
         origin = { x: parent.x, y: parent.y + half };
       }
     } else if (rel.members.length === 0) {
-      // Unknown parents: compute virtual origin above the children
       const children = relEggs
         .map((e) => individuals.find((i) => i.id === e.individual_id))
         .filter((i): i is PlacedIndividual => i != null && i.x != null && i.y != null);
@@ -1560,7 +2234,6 @@ function render() {
     // Separate twin eggs from regular eggs
     const twinEggs = relEggs.filter((e) => e.properties?.twin);
     const regularEggs = relEggs.filter((e) => !e.properties?.twin);
-    // Treat single remaining twin egg as regular
     const effectiveRegular = twinEggs.length >= 2 ? regularEggs : [...regularEggs, ...twinEggs];
     const effectiveTwins = twinEggs.length >= 2 ? twinEggs : [];
 
@@ -1578,10 +2251,9 @@ function render() {
       const barOffset = siblingBarOffsets.get(rel.id) ?? 0;
       const barY = defaultBarY + barOffset;
 
-      ctx.strokeStyle = "#334155";
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2;
 
-      // Vertical stem from origin down to bar (only if there are parents)
       if (!noParents) {
         ctx.beginPath();
         ctx.moveTo(origin.x, origin.y);
@@ -1589,7 +2261,6 @@ function render() {
         ctx.stroke();
       }
 
-      // Horizontal bar spanning all children
       const xs = regChildren.map((c) => c.x);
       if (!noParents) xs.push(origin.x);
       const barLeft = Math.min(...xs);
@@ -1599,7 +2270,6 @@ function render() {
       ctx.lineTo(barRight, barY);
       ctx.stroke();
 
-      // Vertical drops from bar to each child
       for (const child of regChildren) {
         const childTopY = child.y - half;
         ctx.beginPath();
@@ -1629,8 +2299,7 @@ function render() {
         const defaultApexY = minTopY - (minTopY - origin.y) * 0.8;
         const apexY = defaultApexY + (chevronApexOffsets.get(rel.id) ?? 0);
 
-        // Vertical stem from origin to apex (only if there are parents)
-        ctx.strokeStyle = "#334155";
+        ctx.strokeStyle = strokeColor;
         ctx.lineWidth = 2;
         if (rel.members.length > 0) {
           ctx.beginPath();
@@ -1642,7 +2311,6 @@ function render() {
           ctx.stroke();
         }
 
-        // Diagonal lines from apex to each twin child
         const isMonozygotic = effectiveTwins.some((e) => e.properties?.monozygotic);
 
         for (const tc of twinChildren) {
@@ -1652,7 +2320,6 @@ function render() {
           ctx.stroke();
         }
 
-        // Monozygotic: horizontal bar across the chevron arms
         if (isMonozygotic && twinChildren.length === 2) {
           const barY = (apexY + Math.min(twinChildren[0].topY, twinChildren[1].topY)) / 2;
           const frac0 = (barY - apexY) / (twinChildren[0].topY - apexY);
@@ -1665,6 +2332,18 @@ function render() {
           ctx.stroke();
         }
       }
+    }
+  }
+
+  // Draw find highlights (before individuals so they appear behind)
+  if (findResults.length > 0) {
+    for (let fi = 0; fi < findResults.length; fi++) {
+      const ind = individuals.find((i) => i.id === findResults[fi]);
+      if (!ind || ind.x == null || ind.y == null) continue;
+      ctx.beginPath();
+      ctx.arc(ind.x, ind.y, SHAPE_SIZE / 2 + 8, 0, Math.PI * 2);
+      ctx.fillStyle = fi === findIndex ? findCurrentColor : findHighlightColor;
+      ctx.fill();
     }
   }
 
@@ -1682,7 +2361,64 @@ function render() {
       probandText: ind.proband_text ?? "",
     };
     const isSelected = selectedIds.has(ind.id) || selectedIndividualId === ind.id;
-    drawIndividual(ctx, x, y, SHAPE_SIZE, spec, isSelected);
+    drawIndividual(ctx, x, y, SHAPE_SIZE, spec, isSelected, symbolColors);
+  }
+
+  // Draw individual on-canvas notes
+  for (const ind of individuals) {
+    if (ind.x == null || ind.y == null) continue;
+    if (!ind.properties?.show_notes || !ind.notes) continue;
+    const offsetX = (ind.properties.note_offset_x as number) ?? 0;
+    const offsetY = (ind.properties.note_offset_y as number) ?? SHAPE_SIZE;
+    const noteX = ind.x + offsetX;
+    const noteY = ind.y + offsetY;
+    const lines = wrapText(ind.notes, 120);
+
+    ctx.fillStyle = strokeColor;
+    ctx.font = getCanvasFontWithSize(11);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    for (let li = 0; li < lines.length; li++) {
+      ctx.fillText(lines[li], noteX, noteY + li * 14);
+    }
+  }
+
+  // Draw floating notes
+  if (showAllFloatingNotes) {
+    for (const note of floatingNotes) {
+      if (!note.visible) continue;
+      const b = getNoteBounds(note);
+      const isNoteSelected = note.id === selectedNoteId;
+
+      // Background
+      ctx.fillStyle = cssVar("--color-surface");
+      ctx.strokeStyle = isNoteSelected ? cssVar("--color-accent") : cssVar("--color-border");
+      ctx.lineWidth = isNoteSelected ? 2 : 1;
+      const r = 4;
+      ctx.beginPath();
+      ctx.moveTo(b.x + r, b.y);
+      ctx.lineTo(b.x + b.w - r, b.y);
+      ctx.quadraticCurveTo(b.x + b.w, b.y, b.x + b.w, b.y + r);
+      ctx.lineTo(b.x + b.w, b.y + b.h - r);
+      ctx.quadraticCurveTo(b.x + b.w, b.y + b.h, b.x + b.w - r, b.y + b.h);
+      ctx.lineTo(b.x + r, b.y + b.h);
+      ctx.quadraticCurveTo(b.x, b.y + b.h, b.x, b.y + b.h - r);
+      ctx.lineTo(b.x, b.y + r);
+      ctx.quadraticCurveTo(b.x, b.y, b.x + r, b.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = strokeColor;
+      ctx.font = getCanvasFontWithSize(11);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      const lines = (note.text || "").split("\n");
+      for (let li = 0; li < lines.length; li++) {
+        ctx.fillText(lines[li], b.x + NOTE_PADDING, b.y + NOTE_PADDING + li * NOTE_LINE_HEIGHT, NOTE_WIDTH - NOTE_PADDING * 2);
+      }
+    }
   }
 }
 
@@ -1691,20 +2427,18 @@ function render() {
 function rejectStroke(pts: Point[]) {
   if (pts.length < 2) { render(); return; }
 
-  // Redraw the stroke in red over the current canvas
   render();
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) {
     ctx.lineTo(pts[i].x, pts[i].y);
   }
-  ctx.strokeStyle = "#ef4444";
+  ctx.strokeStyle = cssVar("--color-danger");
   ctx.lineWidth = 2.5;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
 
-  // Fade out after a brief moment
   setTimeout(() => render(), 300);
 }
 
@@ -1723,7 +2457,7 @@ function pointInPolygon(pt: Point, polygon: Point[]): boolean {
   return inside;
 }
 
-function pointerPos(e: PointerEvent): Point {
+function pointerPos(e: PointerEvent | MouseEvent): Point {
   const rect = canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
@@ -1736,3 +2470,80 @@ function showToast(shape: Shape) {
     toast.className = "toast hidden";
   }, 1500);
 }
+
+// --- Toolbar event wiring ---
+
+btnUndo.addEventListener("click", undo);
+btnRedo.addEventListener("click", redo);
+btnGrid.addEventListener("click", () => {
+  snapToGrid = !snapToGrid;
+  btnGrid.classList.toggle("active", snapToGrid);
+  render();
+});
+btnGrid.classList.toggle("active", snapToGrid);
+
+btnFind.addEventListener("click", openFind);
+findInput.addEventListener("input", runFind);
+findPrevBtn.addEventListener("click", findPrev);
+findNextBtn.addEventListener("click", findNext);
+findAllBtn.addEventListener("click", () => {
+  if (findResults.length > 0) {
+    selectedIds = new Set(findResults);
+    selectedIndividualId = null;
+    render();
+  }
+});
+findCloseBtn.addEventListener("click", closeFind);
+
+btnAddNote.addEventListener("click", addFloatingNote);
+btnToggleNotes.addEventListener("click", () => {
+  showAllFloatingNotes = !showAllFloatingNotes;
+  btnToggleNotes.classList.toggle("active", showAllFloatingNotes);
+  render();
+});
+btnToggleNotes.classList.toggle("active", showAllFloatingNotes);
+
+btnTheme.addEventListener("click", () => {
+  toggleTheme();
+  render();
+});
+
+// Font settings
+btnFont.addEventListener("click", () => {
+  fontPopup.classList.toggle("open");
+});
+
+const fontFamilyEl = document.getElementById("font-family") as HTMLSelectElement;
+const fontSizeEl = document.getElementById("font-size") as HTMLInputElement;
+const fontBoldEl = document.getElementById("font-bold") as HTMLInputElement;
+const fontItalicEl = document.getElementById("font-italic") as HTMLInputElement;
+
+// Init font UI from settings
+fontFamilyEl.value = fontSettings.family;
+fontSizeEl.value = String(fontSettings.size);
+fontBoldEl.checked = fontSettings.bold;
+fontItalicEl.checked = fontSettings.italic;
+
+fontFamilyEl.addEventListener("change", () => {
+  updateFontSettings({ family: fontFamilyEl.value });
+  render();
+});
+fontSizeEl.addEventListener("input", () => {
+  updateFontSettings({ size: parseInt(fontSizeEl.value, 10) || 12 });
+  render();
+});
+fontBoldEl.addEventListener("change", () => {
+  updateFontSettings({ bold: fontBoldEl.checked });
+  render();
+});
+fontItalicEl.addEventListener("change", () => {
+  updateFontSettings({ italic: fontItalicEl.checked });
+  render();
+});
+
+// Close font popup when clicking outside
+document.addEventListener("click", (e) => {
+  if (!fontPopup.contains(e.target as Node) && e.target !== btnFont) {
+    fontPopup.classList.remove("open");
+  }
+});

@@ -1,4 +1,5 @@
 import "./panel.css";
+import { renderMarkdown } from "./markdown";
 
 // --- Types ---
 
@@ -6,6 +7,7 @@ interface PanelCallbacks {
   onUpdate: () => Promise<void>;
   onClose: () => void;
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
+  onBeforeMutation: () => void;
 }
 
 interface IndividualData {
@@ -55,6 +57,10 @@ let elDob: HTMLInputElement;
 let elDod: HTMLInputElement;
 
 let elNotes: HTMLTextAreaElement;
+let elNotesPreview: HTMLDivElement;
+let elNotesToggle: HTMLButtonElement;
+let elShowNotes: HTMLInputElement;
+let notesPreviewMode = false;
 
 let elTelHome: HTMLInputElement;
 let elTelWork: HTMLInputElement;
@@ -219,6 +225,26 @@ export function initPanel(cbs: PanelCallbacks): void {
 
   // Notes section
   elNotes = makeTextarea();
+  elNotesPreview = document.createElement("div");
+  elNotesPreview.className = "notes-preview";
+  elNotesPreview.style.display = "none";
+  elNotesToggle = document.createElement("button");
+  elNotesToggle.className = "notes-toggle";
+  elNotesToggle.textContent = "Preview";
+  elNotesToggle.addEventListener("click", () => {
+    notesPreviewMode = !notesPreviewMode;
+    if (notesPreviewMode) {
+      elNotes.style.display = "none";
+      elNotesPreview.style.display = "";
+      elNotesPreview.innerHTML = renderMarkdown(elNotes.value);
+      elNotesToggle.textContent = "Edit";
+    } else {
+      elNotes.style.display = "";
+      elNotesPreview.style.display = "none";
+      elNotesToggle.textContent = "Preview";
+    }
+  });
+  elShowNotes = makeInput("checkbox") as HTMLInputElement;
 
   // Contact section
   elTelHome = makeInput("tel");
@@ -250,6 +276,9 @@ export function initPanel(cbs: PanelCallbacks): void {
 
     heading("Notes"),
     makeField("Notes", elNotes),
+    elNotesPreview,
+    elNotesToggle,
+    makeCheckboxRow("Show notes on canvas", elShowNotes),
 
     heading("Contact"),
     makeField("Home telephone", elTelHome),
@@ -259,30 +288,31 @@ export function initPanel(cbs: PanelCallbacks): void {
   );
 
   // Wire events — immediate for dropdowns/checkbox
-  elSex.addEventListener("change", () => patchDirect({ biological_sex: elSex.value }));
-  elMortality.addEventListener("change", () => patchProperty("death_status", elMortality.value));
-  elAffection.addEventListener("change", () => patchProperty("affection_status", elAffection.value));
-  elFertility.addEventListener("change", () => patchProperty("fertility_status", elFertility.value));
-  elProband.addEventListener("input", () => patchDirect({ proband: parseFloat(elProband.value) }));
+  elSex.addEventListener("change", () => { callbacks.onBeforeMutation(); patchDirect({ biological_sex: elSex.value }); });
+  elMortality.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("death_status", elMortality.value); });
+  elAffection.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("affection_status", elAffection.value); });
+  elFertility.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("fertility_status", elFertility.value); });
+  elProband.addEventListener("input", () => { callbacks.onBeforeMutation(); patchDirect({ proband: parseFloat(elProband.value) }); });
+  elShowNotes.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("show_notes", elShowNotes.checked); });
 
-  // Wire events — debounced for text inputs
-  wireDebounced(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }));
-  wireDebounced(elGivenNames, () => patchDirect({ name: buildName() }));
-  wireDebounced(elSurname, () => patchDirect({ name: buildName() }));
-  wireDebounced(elTitle, () => patchDirect({ name: buildName() }));
-  wireDebounced(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value));
-  wireDebounced(elProbandText, () => patchDirect({ proband_text: elProbandText.value }));
-  wireDebounced(elGeneration, () => {
+  // Wire events — debounced for text inputs (onBeforeMutation fires once when typing starts)
+  wireDebouncedWithUndo(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }));
+  wireDebouncedWithUndo(elGivenNames, () => patchDirect({ name: buildName() }));
+  wireDebouncedWithUndo(elSurname, () => patchDirect({ name: buildName() }));
+  wireDebouncedWithUndo(elTitle, () => patchDirect({ name: buildName() }));
+  wireDebouncedWithUndo(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value));
+  wireDebouncedWithUndo(elProbandText, () => patchDirect({ proband_text: elProbandText.value }));
+  wireDebouncedWithUndo(elGeneration, () => {
     const val = elGeneration.value === "" ? null : parseInt(elGeneration.value, 10);
     patchDirect({ generation: val });
   });
-  wireDebounced(elDob, () => patchProperty("date_of_birth", elDob.value));
-  wireDebounced(elDod, () => handleDateOfDeath(elDod.value));
-  wireDebounced(elNotes, () => patchDirect({ notes: elNotes.value }));
-  wireDebounced(elTelHome, () => patchContact());
-  wireDebounced(elTelWork, () => patchContact());
-  wireDebounced(elTelMobile, () => patchContact());
-  wireDebounced(elEmail, () => patchContact());
+  wireDebouncedWithUndo(elDob, () => patchProperty("date_of_birth", elDob.value));
+  wireDebouncedWithUndo(elDod, () => handleDateOfDeath(elDod.value));
+  wireDebouncedWithUndo(elNotes, () => patchDirect({ notes: elNotes.value }));
+  wireDebouncedWithUndo(elTelHome, () => patchContact());
+  wireDebouncedWithUndo(elTelWork, () => patchContact());
+  wireDebouncedWithUndo(elTelMobile, () => patchContact());
+  wireDebouncedWithUndo(elEmail, () => patchContact());
 }
 
 // --- Open / Close ---
@@ -336,6 +366,13 @@ function populate(data: IndividualData): void {
   elDod.value = (data.properties?.date_of_death as string) ?? "";
 
   elNotes.value = data.notes ?? "";
+  elShowNotes.checked = !!(data.properties?.show_notes);
+
+  // Reset preview mode
+  notesPreviewMode = false;
+  elNotes.style.display = "";
+  elNotesPreview.style.display = "none";
+  elNotesToggle.textContent = "Preview";
 
   // Contacts
   const selfContact = data.contacts?.self;
@@ -412,7 +449,7 @@ async function handleDateOfDeath(dateValue: string): Promise<void> {
   try {
     // Fetch current individual to read existing properties
     const data = await callbacks.api<IndividualData>(`/api/individuals/${currentId}`);
-    const props = { ...(data.properties ?? {}), date_of_death: dateValue };
+    const props: Record<string, unknown> = { ...(data.properties ?? {}), date_of_death: dateValue };
 
     // If a date is being set and mortality is not already a death-related status, set to "dead"
     if (dateValue && !DEAD_STATUSES.has((data.properties?.death_status as string) ?? "")) {
@@ -452,12 +489,22 @@ function buildName(): Record<string, unknown> {
 // --- Debounce ---
 
 let debounceCounter = 0;
-function wireDebounced(el: HTMLInputElement | HTMLTextAreaElement, fn: () => void): void {
-  const key = `debounce-${debounceCounter++}`;
+
+/** Debounced input handler that fires onBeforeMutation once when a new edit session starts. */
+function wireDebouncedWithUndo(el: HTMLInputElement | HTMLTextAreaElement, fn: () => void): void {
+  const key = `debounce-undo-${debounceCounter++}`;
+  let undoFired = false;
   const handler = () => {
+    if (!undoFired) {
+      callbacks.onBeforeMutation();
+      undoFired = true;
+    }
     const existing = debounceTimers.get(key);
     if (existing) clearTimeout(existing);
-    debounceTimers.set(key, setTimeout(fn, 500));
+    debounceTimers.set(key, setTimeout(() => {
+      fn();
+      undoFired = false;
+    }, 500));
   };
   el.addEventListener("input", handler);
 }

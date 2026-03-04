@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from ..models import Event, EventCreate, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeUpdate
+from ..models import Event, EventCreate, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate
 from ..store import store
 
 router = APIRouter(prefix="/api/pedigrees", tags=["pedigrees"])
@@ -40,6 +40,17 @@ def update_pedigree(pedigree_id: uuid.UUID, body: PedigreeUpdate):
     if ped is None:
         raise HTTPException(404, "Pedigree not found")
     return ped
+
+
+@router.put("/{pedigree_id}/restore", status_code=204)
+def restore_pedigree(pedigree_id: uuid.UUID, body: PedigreeRestoreBody):
+    if not store.restore_pedigree_snapshot(
+        pedigree_id,
+        body.individuals,
+        body.relationships,
+        body.eggs,
+    ):
+        raise HTTPException(404, "Pedigree not found")
 
 
 @router.delete("/{pedigree_id}", status_code=204)

@@ -340,3 +340,9 @@ class OffspringCreate(BaseModel):
 class OffspringResult(BaseModel):
     pregnancy_event: Event
     egg: Egg
+
+
+class PedigreeRestoreBody(BaseModel):
+    individuals: list[Individual] = Field(default_factory=list)
+    relationships: list[Relationship] = Field(default_factory=list)
+    eggs: list[Egg] = Field(default_factory=list)

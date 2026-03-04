@@ -1,6 +1,8 @@
 // Pedigree symbol rendering system
 // Converts WPF XAML 48x48 coordinate system to canvas drawing calls.
 
+import { getCanvasFontWithSize } from "./theme";
+
 export interface SymbolSpec {
   sex: string;              // biological_sex from API
   deathStatus: string;      // properties.death_status ?? "alive"
@@ -8,6 +10,12 @@ export interface SymbolSpec {
   fertilityStatus: string;  // properties.fertility_status ?? "unknown"
   proband: number;          // 0-360, 0 means no arrow
   probandText: string;      // label shown near the arrow
+}
+
+export interface SymbolColors {
+  stroke: string;
+  strokeSelected: string;
+  fill: string;
 }
 
 // --- Helpers ---
@@ -83,10 +91,15 @@ export function drawIndividual(
   size: number,
   spec: SymbolSpec,
   selected: boolean,
+  colors?: SymbolColors,
 ): void {
   const scale = s(size);
-  const strokeColor = selected ? "#3b82f6" : "#334155";
-  const fillColor = "#334155";
+  const defaultStroke = "#334155";
+  const defaultSelected = "#3b82f6";
+  const strokeColor = selected
+    ? (colors?.strokeSelected ?? defaultSelected)
+    : (colors?.stroke ?? defaultStroke);
+  const fillColor = colors?.fill ?? defaultStroke;
 
   ctx.save();
   ctx.lineWidth = 2;
@@ -270,7 +283,7 @@ function drawAffection(
     case "possible_affection": {
       // "?" text below-right
       ctx.fillStyle = fillColor;
-      ctx.font = `bold ${12 * scale}px system-ui`;
+      ctx.font = getCanvasFontWithSize(12 * scale);
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
       ctx.fillText("?", cx + 18 * scale, cy + 14 * scale);
@@ -353,7 +366,7 @@ function drawMortality(
     case "neonatal_death": {
       // Text "NND" below shape
       ctx.fillStyle = strokeColor;
-      ctx.font = `bold ${10 * scale}px system-ui`;
+      ctx.font = getCanvasFontWithSize(10 * scale);
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillText("NND", cx, cy + size / 2 + 4);
@@ -363,7 +376,7 @@ function drawMortality(
     case "stillborn": {
       // Text "SB" below shape
       ctx.fillStyle = strokeColor;
-      ctx.font = `bold ${10 * scale}px system-ui`;
+      ctx.font = getCanvasFontWithSize(10 * scale);
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillText("SB", cx, cy + size / 2 + 4);
@@ -373,7 +386,7 @@ function drawMortality(
     case "pregnancy": {
       // Text "P" centered in shape
       ctx.fillStyle = strokeColor;
-      ctx.font = `bold ${14 * scale}px system-ui`;
+      ctx.font = getCanvasFontWithSize(14 * scale);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("P", cx, cy);
@@ -516,7 +529,7 @@ function drawProbandArrow(
   // Draw label near the tail of the arrow
   if (label) {
     ctx.fillStyle = strokeColor;
-    ctx.font = "bold 10px system-ui";
+    ctx.font = getCanvasFontWithSize(10);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     const labelDist = gap + arrowLen + 10;
