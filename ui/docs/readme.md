@@ -33,10 +33,18 @@ Draw a line from the **side** of one individual to the **side** of another. A ho
 Draw a line from any of these sources to a child individual:
 
 - The **relationship line** between two partners
+- An existing **parental line** (to add a sibling to the same relationship)
 - The **bottom** of a single parent
 - The **top** of a child (drawing upward to a relationship line or parent)
 
-An orthogonal path (vertical-horizontal-vertical) is drawn from the relationship midpoint to the child.
+An orthogonal path (vertical-horizontal-vertical) is drawn from the relationship midpoint to the child. Drawing from a parental line creates a new sibling (new pregnancy event + new egg) under the same relationship.
+
+### Sibling and twin connections
+
+Draw from the **top** of one child to the **top** of another child (both must share a parent relationship):
+
+- **Flat/horizontal stroke** → distinct siblings (new pregnancy + new egg)
+- **Chevron (V-shape) stroke** → dizygotic twins (shared pregnancy, separate eggs, rendered as a chevron). Draw a horizontal line between the chevron arms to mark them as monozygotic twins (rendered as an A-shape).
 
 ### Selecting and moving
 

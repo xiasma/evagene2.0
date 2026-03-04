@@ -24,6 +24,7 @@ interface PlacedEgg {
   id: string;
   individual_id: string | null;
   relationship_id: string | null;
+  properties: Record<string, unknown>;
 }
 
 // --- DOM ---
@@ -105,13 +106,17 @@ window.addEventListener("resize", resize);
 // --- API helpers ---
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = options?.method ?? "GET";
+  console.log(`[API] ${method} ${path}`, options?.body ? JSON.parse(options.body as string) : "");
   const resp = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
   if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`);
   if (resp.status === 204) return undefined as T;
-  return resp.json() as Promise<T>;
+  const data = await resp.json();
+  console.log(`[API] ${method} ${path} →`, data);
+  return data as T;
 }
 
 // --- Initialisation: create a working pedigree ---
@@ -209,6 +214,40 @@ function hitRelationshipLine(pos: Point): PlacedRelationship | null {
   return null;
 }
 
+function hitParentalLine(pos: Point): PlacedRelationship | null {
+  const half = SHAPE_SIZE / 2;
+  for (const egg of eggs) {
+    if (!egg.relationship_id || !egg.individual_id) continue;
+    const rel = relationships.find((r) => r.id === egg.relationship_id);
+    if (!rel) continue;
+
+    // Compute origin (same logic as render)
+    let origin: { x: number; y: number } | null = null;
+    if (rel.members.length >= 2) {
+      origin = getRelationshipMidpoint(rel);
+    } else if (rel.members.length === 1) {
+      const parent = individuals.find((i) => i.id === rel.members[0]);
+      if (parent && parent.x != null && parent.y != null) {
+        origin = { x: parent.x, y: parent.y + half };
+      }
+    }
+    if (!origin) continue;
+
+    const child = individuals.find((i) => i.id === egg.individual_id);
+    if (!child || child.x == null || child.y == null) continue;
+    const childTopX = child.x;
+    const childTopY = child.y - half;
+    const midY = (origin.y + childTopY) / 2;
+
+    // Test against 3 segments: origin→midY, midY horizontal, vertical→child
+    const d1 = pointToSegmentDist(pos.x, pos.y, origin.x, origin.y, origin.x, midY);
+    const d2 = pointToSegmentDist(pos.x, pos.y, origin.x, midY, childTopX, midY);
+    const d3 = pointToSegmentDist(pos.x, pos.y, childTopX, midY, childTopX, childTopY);
+    if (Math.min(d1, d2, d3) <= PARENTAL_TOLERANCE) return rel;
+  }
+  return null;
+}
+
 function hitBottom(pos: Point): PlacedIndividual | null {
   const half = SHAPE_SIZE / 2;
   for (const ind of individuals) {
@@ -266,16 +305,7 @@ canvas.addEventListener("pointerdown", (e) => {
   pointerMoved = false;
   clickHitId = null;
 
-  // Priority 1: Hit relationship line → parental line from relationship
-  const relHit = hitRelationshipLine(pos);
-  if (relHit) {
-    drawingParentalLine = true;
-    parentalSource = { type: "relationship", relId: relHit.id };
-    beginStroke(pos);
-    return;
-  }
-
-  // Priority 2: Hit bottom of individual → parental line from parent
+  // Priority 1: Hit bottom of individual → parental line from parent
   const bottomHit = hitBottom(pos);
   if (bottomHit) {
     drawingParentalLine = true;
@@ -284,11 +314,29 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
-  // Priority 3: Hit top of individual → parental line (reverse: child→parent)
+  // Priority 2: Hit top of individual → child source (for sibling/twin connections)
   const topHit = hitTop(pos);
   if (topHit) {
     drawingParentalLine = true;
     parentalSource = { type: "child", indId: topHit.id };
+    beginStroke(pos);
+    return;
+  }
+
+  // Priority 3: Hit existing parental line → add sibling to same relationship
+  const parentalHit = hitParentalLine(pos);
+  if (parentalHit) {
+    drawingParentalLine = true;
+    parentalSource = { type: "relationship", relId: parentalHit.id };
+    beginStroke(pos);
+    return;
+  }
+
+  // Priority 4: Hit relationship line → parental line from relationship
+  const relHit = hitRelationshipLine(pos);
+  if (relHit) {
+    drawingParentalLine = true;
+    parentalSource = { type: "relationship", relId: relHit.id };
     beginStroke(pos);
     return;
   }
@@ -435,18 +483,28 @@ canvas.addEventListener("pointerup", () => {
           rejectStroke(points);
         }
       } else if (source.type === "child") {
-        // Reverse: child → relationship line OR child → parent individual
-        const relTarget = hitRelationshipLine(endpoint);
-        if (relTarget) {
+        // Check if endpoint hits top of another individual → sibling/twin
+        const topTarget = hitTop(endpoint);
+        console.log("[TWIN] child source, endpoint:", endpoint, "topTarget:", topTarget?.id ?? "none");
+        if (topTarget && topTarget.id !== source.indId) {
+          const isChevron = detectChevron(points);
+          console.log("[TWIN] isChevron:", isChevron, "indA:", source.indId, "indB:", topTarget.id);
           render();
-          handleParentalLineFromRelationship(relTarget.id, source.indId);
+          handleSiblingConnection(source.indId, topTarget.id, isChevron);
         } else {
-          const parent = hitIndividual(endpoint);
-          if (parent && parent.id !== source.indId) {
+          // Reverse: child → relationship line OR child → parent individual
+          const relTarget = hitRelationshipLine(endpoint);
+          if (relTarget) {
             render();
-            handleParentalLineFromIndividual(parent.id, source.indId);
+            handleParentalLineFromRelationship(relTarget.id, source.indId);
           } else {
-            rejectStroke(points);
+            const parent = hitIndividual(endpoint);
+            if (parent && parent.id !== source.indId) {
+              render();
+              handleParentalLineFromIndividual(parent.id, source.indId);
+            } else {
+              rejectStroke(points);
+            }
           }
         }
       }
@@ -504,6 +562,12 @@ canvas.addEventListener("pointerup", () => {
         return;
       }
     }
+  }
+
+  // Check for monozygotic bar: short, roughly horizontal stroke crossing twin chevron arms
+  if (points.length >= 2 && tryMarkMonozygotic(points)) {
+    render();
+    return;
   }
 
   const shape = recognise(points);
@@ -687,6 +751,348 @@ async function handleParentalLineFromIndividual(
   }
 }
 
+// --- Sibling / twin connection ---
+
+/** Detect if a stroke forms a chevron (V/inverted-V) shape. */
+function detectChevron(pts: Point[]): boolean {
+  if (pts.length < 5) return false;
+
+  // Find the highest point (lowest y) that isn't the start or end
+  const startY = pts[0].y;
+  const endY = pts[pts.length - 1].y;
+  let peakIdx = -1;
+  let peakY = Infinity;
+  // Skip first/last 10% of points to avoid endpoints
+  const margin = Math.max(1, Math.floor(pts.length * 0.1));
+  for (let i = margin; i < pts.length - margin; i++) {
+    if (pts[i].y < peakY) {
+      peakY = pts[i].y;
+      peakIdx = i;
+    }
+  }
+  if (peakIdx < 0) return false;
+
+  // The peak must be significantly above both endpoints
+  const threshold = 10;
+  const result = (startY - peakY) > threshold && (endY - peakY) > threshold;
+  console.log("[CHEVRON] pts:", pts.length, "startY:", startY.toFixed(1), "endY:", endY.toFixed(1),
+    "peakY:", peakY.toFixed(1), "peakIdx:", peakIdx,
+    "dStart:", (startY - peakY).toFixed(1), "dEnd:", (endY - peakY).toFixed(1),
+    "threshold:", threshold, "→", result);
+  return result;
+}
+
+/** Find the parent relationship for an individual (via eggs). */
+function findParentRelationship(indId: string): PlacedRelationship | null {
+  const egg = eggs.find((e) => e.individual_id === indId && e.relationship_id);
+  if (!egg) return null;
+  return relationships.find((r) => r.id === egg.relationship_id) ?? null;
+}
+
+/** Check if an individual already has an egg under a given relationship. */
+function hasEggUnder(indId: string, relId: string): boolean {
+  return eggs.some((e) => e.individual_id === indId && e.relationship_id === relId);
+}
+
+async function handleSiblingConnection(
+  indAId: string,
+  indBId: string,
+  twin: boolean,
+) {
+  if (!pedigreeId) return;
+  try {
+    // Find parent relationships for both individuals
+    const relA = findParentRelationship(indAId);
+    const relB = findParentRelationship(indBId);
+    console.log("[SIBLING] twin:", twin, "relA:", relA?.id ?? "none", "relB:", relB?.id ?? "none");
+
+    if (twin) {
+      // Twin: make both individuals twins under a shared parent relationship
+      const targetRel = relA ?? relB;
+      if (!targetRel) {
+        rejectStroke(points);
+        return;
+      }
+
+      // Find existing eggs for both individuals under this relationship
+      const eggA = eggs.find(
+        (e) => e.individual_id === indAId && e.relationship_id === targetRel.id,
+      );
+      const eggB = eggs.find(
+        (e) => e.individual_id === indBId && e.relationship_id === targetRel.id,
+      );
+
+      // If both already marked as twins, nothing to do
+      if (eggA?.properties?.twin && eggB?.properties?.twin) {
+        render();
+        return;
+      }
+
+      // Mark existing eggs as twin
+      if (eggA && !eggA.properties?.twin) {
+        await api(`/api/eggs/${eggA.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ properties: { ...eggA.properties, twin: true } }),
+        });
+      }
+      if (eggB && !eggB.properties?.twin) {
+        await api(`/api/eggs/${eggB.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ properties: { ...eggB.properties, twin: true } }),
+        });
+      }
+
+      // If one individual doesn't have an egg yet, create it
+      if (!eggA) {
+        const egg = await api<{ id: string }>("/api/eggs", {
+          method: "POST",
+          body: JSON.stringify({
+            relationship_id: targetRel.id,
+            individual_id: indAId,
+            properties: { twin: true },
+          }),
+        });
+        await api(`/api/pedigrees/${pedigreeId}/eggs/${egg.id}`, {
+          method: "POST",
+        });
+      }
+      if (!eggB) {
+        const egg = await api<{ id: string }>("/api/eggs", {
+          method: "POST",
+          body: JSON.stringify({
+            relationship_id: targetRel.id,
+            individual_id: indBId,
+            properties: { twin: true },
+          }),
+        });
+        await api(`/api/pedigrees/${pedigreeId}/eggs/${egg.id}`, {
+          method: "POST",
+        });
+      }
+    } else {
+      // Distinct siblings: new pregnancy + new egg for second child
+      if (relA) {
+        if (hasEggUnder(indBId, relA.id)) {
+          render();
+          return;
+        }
+        await api(`/api/relationships/${relA.id}/offspring`, {
+          method: "POST",
+          body: JSON.stringify({
+            individual_id: indBId,
+            pedigree_id: pedigreeId,
+          }),
+        });
+      } else if (relB) {
+        if (hasEggUnder(indAId, relB.id)) {
+          render();
+          return;
+        }
+        await api(`/api/relationships/${relB.id}/offspring`, {
+          method: "POST",
+          body: JSON.stringify({
+            individual_id: indAId,
+            pedigree_id: pedigreeId,
+          }),
+        });
+      } else {
+        // Neither has parents — can't make siblings without a parent
+        rejectStroke(points);
+        return;
+      }
+    }
+
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to create sibling connection:", err);
+    showToast("error" as Shape);
+  }
+}
+
+// --- Monozygotic detection ---
+
+function tryMarkMonozygotic(pts: Point[]): boolean {
+  // Stroke must be roughly horizontal and short
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const dx = Math.abs(last.x - first.x);
+  const dy = Math.abs(last.y - first.y);
+  if (dx < 15 || dy > dx * 0.7) return false; // not horizontal enough
+
+  // Average Y of the stroke
+  const avgY = (first.y + last.y) / 2;
+  const minX = Math.min(first.x, last.x);
+  const maxX = Math.max(first.x, last.x);
+
+  const half = SHAPE_SIZE / 2;
+
+  // Check each twin group for intersection
+  const eggsByRel = new Map<string, PlacedEgg[]>();
+  for (const egg of eggs) {
+    if (!egg.relationship_id || !egg.individual_id || !egg.properties?.twin) continue;
+    const key = egg.relationship_id;
+    if (!eggsByRel.has(key)) eggsByRel.set(key, []);
+    eggsByRel.get(key)!.push(egg);
+  }
+
+  for (const [relId, twinEggs] of eggsByRel) {
+    if (twinEggs.length < 2) continue;
+    if (twinEggs.some((e) => e.properties?.monozygotic)) continue; // already monozygotic
+
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) continue;
+
+    let origin: { x: number; y: number } | null = null;
+    if (rel.members.length >= 2) {
+      origin = getRelationshipMidpoint(rel);
+    } else if (rel.members.length === 1) {
+      const parent = individuals.find((i) => i.id === rel.members[0]);
+      if (parent && parent.x != null && parent.y != null) {
+        origin = { x: parent.x, y: parent.y + half };
+      }
+    }
+    if (!origin) continue;
+
+    const twinChildren = twinEggs
+      .map((e) => ({
+        egg: e,
+        ind: individuals.find((i) => i.id === e.individual_id),
+      }))
+      .filter((t) => t.ind && t.ind.x != null && t.ind.y != null);
+
+    if (twinChildren.length < 2) continue;
+
+    const avgApexX = twinChildren.reduce((s, c) => s + c.ind!.x, 0) / twinChildren.length;
+    const minTopY = Math.min(...twinChildren.map((c) => c.ind!.y - half));
+    const apexY = (origin.y + minTopY) / 2;
+
+    // Check if the stroke Y is between apex and children
+    if (avgY < apexY || avgY > minTopY) continue;
+
+    // Check if the stroke X range intersects both chevron arms
+    let armsCrossed = 0;
+    for (const tc of twinChildren) {
+      const childTopY = tc.ind!.y - half;
+      const frac = (avgY - apexY) / (childTopY - apexY);
+      const armX = avgApexX + (tc.ind!.x - avgApexX) * frac;
+      if (armX >= minX - 5 && armX <= maxX + 5) armsCrossed++;
+    }
+
+    if (armsCrossed >= 2) {
+      // Mark all twin eggs as monozygotic
+      handleMarkMonozygotic(twinEggs);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** Show a modal dialog and return the user's choice. */
+function showModal(title: string, message: string, options: { label: string; value: string; primary?: boolean }[]): Promise<string> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+
+    const h4 = document.createElement("h4");
+    h4.textContent = title;
+    dialog.appendChild(h4);
+
+    const p = document.createElement("p");
+    p.textContent = message;
+    dialog.appendChild(p);
+
+    const btnContainer = document.createElement("div");
+    btnContainer.className = "modal-buttons";
+
+    for (const opt of options) {
+      const btn = document.createElement("button");
+      btn.textContent = opt.label;
+      if (opt.primary) btn.className = "primary";
+      btn.addEventListener("click", () => {
+        overlay.remove();
+        resolve(opt.value);
+      });
+      btnContainer.appendChild(btn);
+    }
+
+    dialog.appendChild(btnContainer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+  });
+}
+
+const SEX_LABELS: Record<string, string> = {
+  male: "Male",
+  female: "Female",
+  unknown: "Unknown",
+  intersex: "Intersex",
+  ambiguous_male: "Ambiguous male",
+  ambiguous_female: "Ambiguous female",
+  none: "None",
+  other: "Other",
+};
+
+async function handleMarkMonozygotic(twinEggs: PlacedEgg[]): Promise<void> {
+  try {
+    // Check if twin individuals have different sexes
+    const twinInds = twinEggs
+      .map((e) => individuals.find((i) => i.id === e.individual_id))
+      .filter((i): i is PlacedIndividual => i != null);
+
+    const sexes = new Set(twinInds.map((i) => i.biological_sex ?? "unknown"));
+
+    if (sexes.size > 1) {
+      // Sex conflict — ask the user
+      const distinctSexes = [...sexes];
+      const options: { label: string; value: string; primary?: boolean }[] = distinctSexes.map((s, i) => ({
+        label: `Set both to ${SEX_LABELS[s] ?? s}`,
+        value: s,
+        primary: i === 0,
+      }));
+      options.push({ label: "Ignore conflict", value: "_ignore" });
+
+      const choice = await showModal(
+        "Sex conflict",
+        "Identical twins must be the same biological sex. These individuals have different sexes. How would you like to resolve this?",
+        options,
+      );
+
+      if (choice !== "_ignore") {
+        // Update both individuals to the chosen sex
+        await Promise.all(
+          twinInds.map((ind) =>
+            api(`/api/individuals/${ind.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ biological_sex: choice }),
+            }),
+          ),
+        );
+      }
+    }
+
+    // Mark all twin eggs as monozygotic
+    await Promise.all(
+      twinEggs.map((egg) =>
+        api(`/api/eggs/${egg.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            properties: { ...(egg.properties ?? {}), twin: true, monozygotic: true },
+          }),
+        }),
+      ),
+    );
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to mark monozygotic:", err);
+  }
+}
+
 // --- Rendering ---
 
 function render() {
@@ -715,45 +1121,127 @@ function render() {
   }
 
   // Draw parental lines (egg connections)
+  // Group eggs by relationship_id to detect twins
+  const eggsByRel = new Map<string, PlacedEgg[]>();
   for (const egg of eggs) {
     if (!egg.relationship_id || !egg.individual_id) continue;
+    const key = egg.relationship_id;
+    if (!eggsByRel.has(key)) eggsByRel.set(key, []);
+    eggsByRel.get(key)!.push(egg);
+  }
 
-    const rel = relationships.find((r) => r.id === egg.relationship_id);
+  for (const [relId, relEggs] of eggsByRel) {
+    const rel = relationships.find((r) => r.id === relId);
     if (!rel) continue;
 
-    // Compute origin based on relationship type
-    let origin: { x: number; y: number } | null = null;
     const half = SHAPE_SIZE / 2;
-
+    let origin: { x: number; y: number } | null = null;
     if (rel.members.length >= 2) {
-      // 2-member: midpoint of couple line
       origin = getRelationshipMidpoint(rel);
     } else if (rel.members.length === 1) {
-      // 1-member: bottom of single parent
       const parent = individuals.find((i) => i.id === rel.members[0]);
       if (parent && parent.x != null && parent.y != null) {
         origin = { x: parent.x, y: parent.y + half };
       }
     }
-
     if (!origin) continue;
 
-    // Find child individual → target is top-center
-    const child = individuals.find((i) => i.id === egg.individual_id);
-    if (!child || child.x == null || child.y == null) continue;
-    const childTopX = child.x;
-    const childTopY = child.y - half;
+    // Separate twin eggs from regular eggs
+    const twinEggs = relEggs.filter((e) => e.properties?.twin);
+    const regularEggs = relEggs.filter((e) => !e.properties?.twin);
 
-    // Draw orthogonal path: vertical → horizontal → vertical
-    const midY = (origin.y + childTopY) / 2;
-    ctx.beginPath();
-    ctx.strokeStyle = "#334155";
-    ctx.lineWidth = 2;
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(origin.x, midY);
-    ctx.lineTo(childTopX, midY);
-    ctx.lineTo(childTopX, childTopY);
-    ctx.stroke();
+    // Draw regular eggs as orthogonal stepped paths
+    for (const egg of regularEggs) {
+      const child = individuals.find((i) => i.id === egg.individual_id);
+      if (!child || child.x == null || child.y == null) continue;
+      const childTopX = child.x;
+      const childTopY = child.y - half;
+      const midY = (origin.y + childTopY) / 2;
+      ctx.beginPath();
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 2;
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(origin.x, midY);
+      ctx.lineTo(childTopX, midY);
+      ctx.lineTo(childTopX, childTopY);
+      ctx.stroke();
+    }
+
+    // Draw twin eggs as chevron from shared apex
+    if (twinEggs.length >= 2) {
+      // Resolve twin children positions
+      const twinChildren = twinEggs
+        .map((e) => ({
+          egg: e,
+          ind: individuals.find((i) => i.id === e.individual_id),
+        }))
+        .filter((t) => t.ind && t.ind.x != null && t.ind.y != null)
+        .map((t) => ({
+          egg: t.egg,
+          x: t.ind!.x,
+          topY: t.ind!.y - half,
+        }));
+
+      if (twinChildren.length >= 2) {
+        // Apex: midpoint X of twins, Y between origin and highest child top
+        const avgX = twinChildren.reduce((s, c) => s + c.x, 0) / twinChildren.length;
+        const minTopY = Math.min(...twinChildren.map((c) => c.topY));
+        const apexY = (origin.y + minTopY) / 2;
+
+        // Draw vertical stem from origin to apex
+        ctx.beginPath();
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 2;
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(origin.x, apexY);
+        // Horizontal to apex center if needed
+        if (Math.abs(origin.x - avgX) > 1) {
+          ctx.lineTo(avgX, apexY);
+        }
+        ctx.stroke();
+
+        // Draw diagonal lines from apex to each twin child
+        const isMonozygotic = twinEggs.some((e) => e.properties?.monozygotic);
+
+        for (const tc of twinChildren) {
+          ctx.beginPath();
+          ctx.moveTo(avgX, apexY);
+          ctx.lineTo(tc.x, tc.topY);
+          ctx.stroke();
+        }
+
+        // Monozygotic: draw horizontal bar across the chevron arms
+        if (isMonozygotic && twinChildren.length === 2) {
+          const barY = (apexY + Math.min(twinChildren[0].topY, twinChildren[1].topY)) / 2;
+          // Find X positions where bar intersects the diagonal arms
+          const frac0 = (barY - apexY) / (twinChildren[0].topY - apexY);
+          const frac1 = (barY - apexY) / (twinChildren[1].topY - apexY);
+          const barX0 = avgX + (twinChildren[0].x - avgX) * frac0;
+          const barX1 = avgX + (twinChildren[1].x - avgX) * frac1;
+          ctx.beginPath();
+          ctx.moveTo(barX0, barY);
+          ctx.lineTo(barX1, barY);
+          ctx.stroke();
+        }
+      }
+    } else if (twinEggs.length === 1) {
+      // Single twin egg (partner may have been deleted) — draw as regular
+      const egg = twinEggs[0];
+      const child = individuals.find((i) => i.id === egg.individual_id);
+      if (child && child.x != null && child.y != null) {
+        const childTopX = child.x;
+        const childTopY = child.y - half;
+        const midY = (origin.y + childTopY) / 2;
+        ctx.beginPath();
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 2;
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(origin.x, midY);
+        ctx.lineTo(childTopX, midY);
+        ctx.lineTo(childTopX, childTopY);
+        ctx.stroke();
+      }
+    }
   }
 
   // Draw individual shapes

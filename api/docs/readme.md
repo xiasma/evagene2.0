@@ -44,6 +44,7 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 | POST | `/api/eggs` | Create an egg |
 | GET | `/api/eggs` | List all eggs |
 | GET | `/api/eggs/{id}` | Get an egg |
+| PATCH | `/api/eggs/{id}` | Update an egg (partial) |
 | DELETE | `/api/eggs/{id}` | Delete an egg |
 | POST | `/api/eggs/{id}/events` | Add an event |
 

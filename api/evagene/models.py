@@ -283,6 +283,14 @@ class EggCreate(BaseModel):
     relationship_id: Optional[uuid.UUID] = None
 
 
+class EggUpdate(BaseModel):
+    display_name: Optional[str] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+    individual_id: Optional[uuid.UUID] = None
+    relationship_id: Optional[uuid.UUID] = None
+
+
 class IndividualEventCreate(BaseModel):
     """Validates type is a known individual event type."""
     type: IndividualEventType

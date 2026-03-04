@@ -52,6 +52,7 @@ Pointer events follow a priority chain on `pointerdown`:
 
 ```
 pointerdown
+  ├─ Hit parental line?      → sibling mode (add child to same relationship)
   ├─ Hit relationship line?  → parental line mode
   ├─ Hit bottom of shape?    → parental line from parent
   ├─ Hit top of shape?       → parental line from child
@@ -68,18 +69,27 @@ pointermove
 pointerup
   ├─ !pointerMoved && clickHitId?  → single click → open panel
   ├─ Dragging?                      → persist positions via PATCH
-  ├─ Parental line?                 → check endpoint, create offspring
+  ├─ Parental line (child source)?
+  │   ├─ Endpoint hits top of another child? → sibling/twin
+  │   │   ├─ Chevron stroke?  → dizygotic twin (shared egg, no new pregnancy)
+  │   │   └─ Flat stroke?     → distinct sibling (new pregnancy + egg)
+  │   ├─ Endpoint hits relationship line?    → add as child
+  │   └─ Endpoint hits individual?           → parent-child
+  ├─ Parental line (other)?                  → check endpoint, create offspring
   ├─ Connecting?                    → check endpoint, create relationship
+  ├─ Monozygotic bar?              → horizontal stroke crossing twin chevron arms
+  │                                   → if sexes differ: modal dialog (choose sex or ignore)
   ├─ Closed loop?                   → lasso selection
   └─ Open stroke?                   → gesture recognition → create individual
 ```
 
 ### Hit testing
 
-Five hit-test functions check pointer position against individuals and relationship lines:
+Six hit-test functions check pointer position against individuals and relationship lines:
 
 | Function | Zone | Tolerance |
 |----------|------|-----------|
+| `hitParentalLine` | 3-segment orthogonal path (origin→midY→child) | 12px |
 | `hitRelationshipLine` | Horizontal line between partners | 12px |
 | `hitBottom` | Bottom-center of shape | 12px |
 | `hitTop` | Top-center of shape | 12px |
@@ -190,7 +200,10 @@ The title bar captures pointer events. On `pointerdown`, it records the offset b
 
 1. Clear the canvas
 2. Draw relationship lines (horizontal segments between paired individuals)
-3. Draw parental lines (orthogonal paths from relationship midpoints or single parents down to children)
+3. Draw parental lines — eggs are grouped by `relationship_id`:
+   - **Regular eggs**: orthogonal stepped paths (origin → midY → child)
+   - **Twin eggs** (`properties.twin`): diagonal chevron from a shared apex to each twin child
+   - **Monozygotic twins** (`properties.monozygotic`): chevron with horizontal bar across the arms (A-shape)
 4. Draw individual symbols (via `drawIndividual` from `symbols.ts`)
 
 The render function reads directly from the module-level `individuals`, `relationships`, and `eggs` arrays. Selection state (`selectedIds`, `selectedIndividualId`) determines stroke colour (blue for selected, slate for default).

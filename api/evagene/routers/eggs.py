@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from ..models import Egg, EggCreate, Event, EventCreate
+from ..models import Egg, EggCreate, EggUpdate, Event, EventCreate
 from ..store import store
 
 router = APIRouter(prefix="/api/eggs", tags=["eggs"])
@@ -32,6 +32,14 @@ def get_egg(egg_id: uuid.UUID):
     if egg is None:
         raise HTTPException(404, "Egg not found")
     return egg
+
+
+@router.patch("/{egg_id}", response_model=Egg)
+def update_egg(egg_id: uuid.UUID, body: EggUpdate):
+    result = store.update_egg(egg_id, **body.model_dump(exclude_none=True))
+    if result is None:
+        raise HTTPException(404, "Egg not found")
+    return result
 
 
 @router.delete("/{egg_id}", status_code=204)

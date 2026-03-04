@@ -166,6 +166,15 @@ class Store:
     def list_eggs(self) -> list[Egg]:
         return list(self.eggs.values())
 
+    def update_egg(self, id: uuid.UUID, **fields) -> Egg | None:
+        egg = self.eggs.get(id)
+        if egg is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(egg, k, v)
+        return egg
+
     def delete_egg(self, id: uuid.UUID) -> bool:
         egg = self.eggs.pop(id, None)
         if egg is None:

@@ -18,7 +18,8 @@
       "Bash(tasklist:*)",
       "Bash(find:*)",
       "Bash(wc:*)",
-      "Bash(sed 's/\\\\.xaml$//')"
+      "Bash(sed 's/\\\\.xaml$//')",
+      "WebFetch(domain:humangenetics.medicine.uiowa.edu)"
     ]
   }
 }
