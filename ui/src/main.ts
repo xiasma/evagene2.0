@@ -1,5 +1,7 @@
 import "./style.css";
 import { recognise, centroid, Point, Shape } from "./recognise";
+import { drawIndividual, SymbolSpec } from "./symbols";
+import { initPanel, openPanel, closePanel } from "./panel";
 
 // --- Types ---
 
@@ -8,6 +10,9 @@ interface PlacedIndividual {
   x: number;
   y: number;
   biological_sex: string | null;
+  properties: Record<string, unknown>;
+  proband: number;
+  proband_text: string;
 }
 
 interface PlacedRelationship {
@@ -29,6 +34,7 @@ app.innerHTML = `
   <h1>Evagene</h1>
   <p>Pedigree management for clinical and research geneticists.</p>
   <canvas id="canvas"></canvas>
+  <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
 `;
 
@@ -61,6 +67,11 @@ let groupDragOffsets: Map<string, { dx: number; dy: number }> = new Map();
 
 // Selection state (lasso)
 let selectedIds: Set<string> = new Set();
+
+// Single-select state (for properties panel)
+let selectedIndividualId: string | null = null;
+let pointerMoved = false;
+let clickHitId: string | null = null;
 
 // Connection drawing state
 let connecting = false;
@@ -114,6 +125,20 @@ async function init() {
 }
 
 init();
+
+// --- Properties panel ---
+
+initPanel({
+  onUpdate: async () => {
+    await refreshState();
+    render();
+  },
+  onClose: () => {
+    selectedIndividualId = null;
+    render();
+  },
+  api,
+});
 
 // --- Side hit-test for connection drawing ---
 
@@ -238,6 +263,8 @@ function beginStroke(pos: Point) {
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   const pos = pointerPos(e);
+  pointerMoved = false;
+  clickHitId = null;
 
   // Priority 1: Hit relationship line → parental line from relationship
   const relHit = hitRelationshipLine(pos);
@@ -286,6 +313,7 @@ canvas.addEventListener("pointerdown", (e) => {
 
   if (hit && selectedIds.has(hit.id)) {
     // Hit a selected shape → group drag all selected
+    clickHitId = hit.id;
     dragging = true;
     groupDragOffsets = new Map();
     for (const id of selectedIds) {
@@ -295,21 +323,26 @@ canvas.addEventListener("pointerdown", (e) => {
       }
     }
   } else if (hit) {
-    // Hit an unselected shape → clear selection, single drag
+    // Hit an unselected shape → clear lasso selection, single drag
+    clickHitId = hit.id;
     selectedIds = new Set();
     dragging = true;
     groupDragOffsets = new Map();
     groupDragOffsets.set(hit.id, { dx: hit.x - pos.x, dy: hit.y - pos.y });
     render();
   } else {
-    // Hit nothing → clear selection, enter draw mode
+    // Hit nothing → clear all selection, close panel, enter draw mode
     selectedIds = new Set();
+    selectedIndividualId = null;
+    closePanel();
     render();
     beginStroke(pos);
   }
 });
 
 canvas.addEventListener("pointermove", (e) => {
+  pointerMoved = true;
+
   if (dragging && groupDragOffsets.size > 0) {
     const pos = pointerPos(e);
     for (const [id, offset] of groupDragOffsets) {
@@ -333,6 +366,20 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", () => {
+  // Single-click (no drag) on an individual → open properties panel
+  if (clickHitId && !pointerMoved) {
+    selectedIndividualId = clickHitId;
+    selectedIds = new Set();
+    dragging = false;
+    groupDragOffsets = new Map();
+    drawing = false;
+    render();
+    openPanel(clickHitId);
+    clickHitId = null;
+    return;
+  }
+  clickHitId = null;
+
   if (dragging && groupDragOffsets.size > 0) {
     const movedIndividuals: { id: string; x: number; y: number }[] = [];
     for (const id of groupDragOffsets.keys()) {
@@ -451,6 +498,8 @@ canvas.addEventListener("pointerup", () => {
 
       if (enclosed.length > 0) {
         selectedIds = new Set(enclosed.map((ind) => ind.id));
+        selectedIndividualId = null;
+        closePanel();
         render();
         return;
       }
@@ -712,28 +761,16 @@ function render() {
     const { x, y, biological_sex } = ind;
     if (x == null || y == null) continue;
 
-    ctx.strokeStyle = selectedIds.has(ind.id) ? "#3b82f6" : "#334155";
-    ctx.beginPath();
-
-    if (biological_sex === "female") {
-      // Circle
-      const r = SHAPE_SIZE / 2;
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-    } else if (biological_sex === "male") {
-      // Square (centred)
-      const half = SHAPE_SIZE / 2;
-      ctx.rect(x - half, y - half, SHAPE_SIZE, SHAPE_SIZE);
-    } else {
-      // Diamond (unknown / intersex / null)
-      const half = SHAPE_SIZE / 2;
-      ctx.moveTo(x, y - half);
-      ctx.lineTo(x + half, y);
-      ctx.lineTo(x, y + half);
-      ctx.lineTo(x - half, y);
-      ctx.closePath();
-    }
-
-    ctx.stroke();
+    const spec: SymbolSpec = {
+      sex: biological_sex ?? "unknown",
+      deathStatus: (ind.properties?.death_status as string) ?? "alive",
+      affectionStatus: (ind.properties?.affection_status as string) ?? "unknown",
+      fertilityStatus: (ind.properties?.fertility_status as string) ?? "unknown",
+      proband: ind.proband ?? 0,
+      probandText: ind.proband_text ?? "",
+    };
+    const isSelected = selectedIds.has(ind.id) || selectedIndividualId === ind.id;
+    drawIndividual(ctx, x, y, SHAPE_SIZE, spec, isSelected);
   }
 }
 

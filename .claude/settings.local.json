@@ -15,7 +15,10 @@
       "Bash(taskkill:*)",
       "Bash(npx tsc:*)",
       "Bash(powershell:*)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(sed 's/\\\\.xaml$//')"
     ]
   }
 }
