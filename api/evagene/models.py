@@ -346,3 +346,7 @@ class PedigreeRestoreBody(BaseModel):
     individuals: list[Individual] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
     eggs: list[Egg] = Field(default_factory=list)
+
+
+class GedcomImportBody(BaseModel):
+    content: str

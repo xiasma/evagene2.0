@@ -74,8 +74,19 @@ app.innerHTML = `
         </div>
       </div>
       <button id="btn-theme" title="Toggle theme">Theme</button>
+      <span class="separator"></span>
+      <button id="btn-zoom-in" title="Zoom in">+</button>
+      <button id="btn-zoom-out" title="Zoom out">&minus;</button>
+      <button id="btn-zoom-reset" title="Reset zoom">1:1</button>
+      <span class="separator"></span>
+      <button id="btn-save" title="Save JSON">Save</button>
+      <button id="btn-load" title="Load JSON">Load</button>
+      <button id="btn-export-ged" title="Export GEDCOM">Export .ged</button>
+      <button id="btn-import-ged" title="Import GEDCOM">Import .ged</button>
     </div>
   </div>
+  <input type="file" id="file-json" accept=".json" style="display:none">
+  <input type="file" id="file-ged" accept=".ged,.gedcom" style="display:none">
   <canvas id="canvas"></canvas>
   <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
@@ -103,6 +114,15 @@ const btnToggleNotes = document.getElementById("btn-toggle-notes") as HTMLButton
 const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
 const fontPopup = document.getElementById("font-popup") as HTMLDivElement;
 const btnTheme = document.getElementById("btn-theme") as HTMLButtonElement;
+const btnZoomIn = document.getElementById("btn-zoom-in") as HTMLButtonElement;
+const btnZoomOut = document.getElementById("btn-zoom-out") as HTMLButtonElement;
+const btnZoomReset = document.getElementById("btn-zoom-reset") as HTMLButtonElement;
+const btnSave = document.getElementById("btn-save") as HTMLButtonElement;
+const btnLoad = document.getElementById("btn-load") as HTMLButtonElement;
+const btnExportGed = document.getElementById("btn-export-ged") as HTMLButtonElement;
+const btnImportGed = document.getElementById("btn-import-ged") as HTMLButtonElement;
+const fileJsonInput = document.getElementById("file-json") as HTMLInputElement;
+const fileGedInput = document.getElementById("file-ged") as HTMLInputElement;
 
 // Find bar elements
 const findBar = document.getElementById("find-bar") as HTMLDivElement;
@@ -236,6 +256,31 @@ let noteDragOffset = { dx: 0, dy: 0 };
 // --- Note drag (per-individual on-canvas notes) ---
 let draggingIndNoteId: string | null = null;
 let indNoteDragOffset = { dx: 0, dy: 0 };
+
+// --- Zoom / Pan state ---
+let zoomScale = 1;
+let panX = 0;
+let panY = 0;
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 5;
+const ZOOM_STEP = 0.1;
+
+/** Convert screen-space point to world coordinates accounting for zoom/pan. */
+function screenToWorld(sx: number, sy: number): Point {
+  return { x: (sx - panX) / zoomScale, y: (sy - panY) / zoomScale };
+}
+
+/** Pan-drag state (middle-click or Ctrl+left) */
+let panning = false;
+let panStartX = 0;
+let panStartY = 0;
+let panStartPanX = 0;
+let panStartPanY = 0;
+
+// Pinch state
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+let pinchStartMid = { x: 0, y: 0 };
 
 // --- Canvas sizing ---
 
@@ -608,10 +653,13 @@ function hitIndividualNote(pos: Point): PlacedIndividual | null {
 function beginStroke(pos: Point) {
   drawing = true;
   points = [pos];
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoomScale, zoomScale);
   ctx.beginPath();
   ctx.moveTo(pos.x, pos.y);
   ctx.strokeStyle = cssVar("--color-stroke");
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2 / zoomScale;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 }
@@ -621,6 +669,17 @@ canvas.addEventListener("pointerdown", (e) => {
   const pos = pointerPos(e);
   pointerMoved = false;
   clickHitId = null;
+
+  // Middle-click or Ctrl+click → pan
+  if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
+    const spos = pointerScreenPos(e);
+    panning = true;
+    panStartX = spos.x;
+    panStartY = spos.y;
+    panStartPanX = panX;
+    panStartPanY = panY;
+    return;
+  }
 
   // Priority 0a: Floating note drag
   const noteHit = hitFloatingNote(pos);
@@ -749,6 +808,16 @@ canvas.addEventListener("pointerdown", (e) => {
 
 canvas.addEventListener("pointermove", (e) => {
   pointerMoved = true;
+
+  // Pan handling (uses screen coords)
+  if (panning) {
+    const spos = pointerScreenPos(e);
+    panX = panStartPanX + (spos.x - panStartX);
+    panY = panStartPanY + (spos.y - panStartY);
+    render();
+    return;
+  }
+
   const pos = pointerPos(e);
   lastMousePos = pos;
 
@@ -806,6 +875,12 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", () => {
+  // Pan end
+  if (panning) {
+    panning = false;
+    return;
+  }
+
   // Floating note drag end
   if (draggingNoteId) {
     const note = floatingNotes.find((n) => n.id === draggingNoteId);
@@ -876,6 +951,7 @@ canvas.addEventListener("pointerup", () => {
 
   if (!drawing) return;
   drawing = false;
+  ctx.restore(); // matches beginStroke's ctx.save()
 
   // Parental line mode
   if (drawingParentalLine) {
@@ -2158,20 +2234,31 @@ function render() {
     fill: strokeColor,
   };
 
-  // Draw grid
+  // Apply zoom/pan transform
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoomScale, zoomScale);
+
+  // Draw grid (compute visible area in world coordinates)
   if (snapToGrid) {
     ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 0.5;
-    for (let x = 0; x < rect.width; x += GRID_SIZE) {
+    ctx.lineWidth = 0.5 / zoomScale;
+    const worldLeft = -panX / zoomScale;
+    const worldTop = -panY / zoomScale;
+    const worldRight = (rect.width - panX) / zoomScale;
+    const worldBottom = (rect.height - panY) / zoomScale;
+    const startX = Math.floor(worldLeft / GRID_SIZE) * GRID_SIZE;
+    const startY = Math.floor(worldTop / GRID_SIZE) * GRID_SIZE;
+    for (let x = startX; x <= worldRight; x += GRID_SIZE) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, rect.height);
+      ctx.moveTo(x, worldTop);
+      ctx.lineTo(x, worldBottom);
       ctx.stroke();
     }
-    for (let y = 0; y < rect.height; y += GRID_SIZE) {
+    for (let y = startY; y <= worldBottom; y += GRID_SIZE) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(rect.width, y);
+      ctx.moveTo(worldLeft, y);
+      ctx.lineTo(worldRight, y);
       ctx.stroke();
     }
   }
@@ -2420,6 +2507,9 @@ function render() {
       }
     }
   }
+
+  // Restore zoom/pan transform
+  ctx.restore();
 }
 
 // --- Rejection animation ---
@@ -2428,16 +2518,20 @@ function rejectStroke(pts: Point[]) {
   if (pts.length < 2) { render(); return; }
 
   render();
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoomScale, zoomScale);
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) {
     ctx.lineTo(pts[i].x, pts[i].y);
   }
   ctx.strokeStyle = cssVar("--color-danger");
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2.5 / zoomScale;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
+  ctx.restore();
 
   setTimeout(() => render(), 300);
 }
@@ -2458,6 +2552,14 @@ function pointInPolygon(pt: Point, polygon: Point[]): boolean {
 }
 
 function pointerPos(e: PointerEvent | MouseEvent): Point {
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  return screenToWorld(sx, sy);
+}
+
+/** Get raw screen-space position (no zoom transform). */
+function pointerScreenPos(e: PointerEvent | MouseEvent): Point {
   const rect = canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
@@ -2545,5 +2647,163 @@ fontItalicEl.addEventListener("change", () => {
 document.addEventListener("click", (e) => {
   if (!fontPopup.contains(e.target as Node) && e.target !== btnFont) {
     fontPopup.classList.remove("open");
+  }
+});
+
+// --- Zoom controls ---
+
+/** Zoom towards a screen-space focal point. */
+function zoomAt(newScale: number, focusScreenX: number, focusScreenY: number) {
+  newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newScale));
+  // Adjust pan so the world point under the cursor stays fixed
+  const worldX = (focusScreenX - panX) / zoomScale;
+  const worldY = (focusScreenY - panY) / zoomScale;
+  panX = focusScreenX - worldX * newScale;
+  panY = focusScreenY - worldY * newScale;
+  zoomScale = newScale;
+  render();
+}
+
+function zoomCenter(delta: number) {
+  const rect = canvas.getBoundingClientRect();
+  zoomAt(zoomScale + delta, rect.width / 2, rect.height / 2);
+}
+
+btnZoomIn.addEventListener("click", () => zoomCenter(ZOOM_STEP));
+btnZoomOut.addEventListener("click", () => zoomCenter(-ZOOM_STEP));
+btnZoomReset.addEventListener("click", () => {
+  zoomScale = 1;
+  panX = 0;
+  panY = 0;
+  render();
+});
+
+// Scroll wheel zoom (zoom towards cursor)
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+  zoomAt(zoomScale + delta, sx, sy);
+}, { passive: false });
+
+// Pinch-to-zoom (multitouch)
+canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    pinchStartDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    pinchStartScale = zoomScale;
+    const rect = canvas.getBoundingClientRect();
+    pinchStartMid = {
+      x: (t0.clientX + t1.clientX) / 2 - rect.left,
+      y: (t0.clientY + t1.clientY) / 2 - rect.top,
+    };
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const newScale = pinchStartScale * (dist / pinchStartDist);
+    zoomAt(newScale, pinchStartMid.x, pinchStartMid.y);
+  }
+}, { passive: false });
+
+// --- File I/O: Save / Load JSON, Export / Import GEDCOM ---
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+btnSave.addEventListener("click", async () => {
+  if (!pedigreeId) return;
+  try {
+    const detail = await api<Record<string, unknown>>(`/api/pedigrees/${pedigreeId}`);
+    const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
+    downloadBlob(blob, "pedigree.json");
+  } catch (err) {
+    console.error("Save failed:", err);
+  }
+});
+
+btnLoad.addEventListener("click", () => {
+  fileJsonInput.value = "";
+  fileJsonInput.click();
+});
+
+fileJsonInput.addEventListener("change", async () => {
+  const file = fileJsonInput.files?.[0];
+  if (!file || !pedigreeId) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    pushUndo(captureSnapshot());
+    await api(`/api/pedigrees/${pedigreeId}/restore`, {
+      method: "PUT",
+      body: JSON.stringify({
+        individuals: data.individuals ?? [],
+        relationships: data.relationships ?? [],
+        eggs: data.eggs ?? [],
+      }),
+    });
+    // Also restore pedigree-level metadata if present
+    const patch: Record<string, unknown> = {};
+    if (data.display_name != null) patch.display_name = data.display_name;
+    if (data.properties != null) patch.properties = data.properties;
+    if (Object.keys(patch).length > 0) {
+      await api(`/api/pedigrees/${pedigreeId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+    }
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Load failed:", err);
+  }
+});
+
+btnExportGed.addEventListener("click", async () => {
+  if (!pedigreeId) return;
+  try {
+    const resp = await fetch(`/api/pedigrees/${pedigreeId}/export.ged`);
+    if (!resp.ok) throw new Error(`Export failed: ${resp.status}`);
+    const blob = await resp.blob();
+    downloadBlob(blob, "pedigree.ged");
+  } catch (err) {
+    console.error("Export GEDCOM failed:", err);
+  }
+});
+
+btnImportGed.addEventListener("click", () => {
+  fileGedInput.value = "";
+  fileGedInput.click();
+});
+
+fileGedInput.addEventListener("change", async () => {
+  const file = fileGedInput.files?.[0];
+  if (!file || !pedigreeId) return;
+  try {
+    const content = await file.text();
+    pushUndo(captureSnapshot());
+    await api(`/api/pedigrees/${pedigreeId}/import/gedcom`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Import GEDCOM failed:", err);
   }
 });

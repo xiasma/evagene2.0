@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 
-from ..models import Event, EventCreate, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate
+from ..gedcom import parse_gedcom, serialize_gedcom
+from ..models import Event, EventCreate, GedcomImportBody, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate
 from ..store import store
 
 router = APIRouter(prefix="/api/pedigrees", tags=["pedigrees"])
@@ -107,6 +109,32 @@ def add_egg_to_pedigree(pedigree_id: uuid.UUID, egg_id: uuid.UUID):
     if store.get_egg(egg_id) is None:
         raise HTTPException(404, "Egg not found")
     store.add_egg_to_pedigree(pedigree_id, egg_id)
+
+
+@router.get("/{pedigree_id}/export.ged")
+def export_gedcom(pedigree_id: uuid.UUID):
+    detail = store.get_pedigree_detail(pedigree_id)
+    if detail is None:
+        raise HTTPException(404, "Pedigree not found")
+    text = serialize_gedcom(
+        detail.individuals,
+        detail.relationships,
+        detail.eggs,
+        pedigree_name=detail.display_name,
+    )
+    return PlainTextResponse(
+        text,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="pedigree.ged"'},
+    )
+
+
+@router.post("/{pedigree_id}/import/gedcom", status_code=204)
+def import_gedcom(pedigree_id: uuid.UUID, body: GedcomImportBody):
+    if store.get_pedigree(pedigree_id) is None:
+        raise HTTPException(404, "Pedigree not found")
+    individuals, relationships, eggs = parse_gedcom(body.content)
+    store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
 
 
 @router.delete("/{pedigree_id}/eggs/{egg_id}", status_code=204)

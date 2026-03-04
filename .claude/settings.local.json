@@ -19,7 +19,9 @@
       "Bash(find:*)",
       "Bash(wc:*)",
       "Bash(sed 's/\\\\.xaml$//')",
-      "WebFetch(domain:humangenetics.medicine.uiowa.edu)"
+      "WebFetch(domain:humangenetics.medicine.uiowa.edu)",
+      "WebSearch",
+      "WebFetch(domain:homepages.rootsweb.com)"
     ]
   }
 }

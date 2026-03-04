@@ -275,6 +275,13 @@ p {
   background: var(--color-border);
 }
 
+.toolbar .separator {
+  width: 1px;
+  height: 1.2rem;
+  background: var(--color-border);
+  margin: 0 0.15rem;
+}
+
 /* Note overlay (for editing floating notes) */
 .note-overlay {
   position: fixed;
