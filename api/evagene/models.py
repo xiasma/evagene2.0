@@ -86,6 +86,34 @@ class SmokerType(str, Enum):
     other = "other"
 
 
+class ChromosomeSource(str, Enum):
+    unknown = "unknown"
+    parents = "parents"
+    mitochondria = "mitochondria"
+    chloroplasts = "chloroplasts"
+    other = "other"
+
+
+class MarkerType(str, Enum):
+    unknown = "unknown"
+    gene = "gene"
+    regulator = "regulator"
+    marker = "marker"
+    other = "other"
+
+
+class ManifestationStatus(str, Enum):
+    unknown = "unknown"
+    presymptomatic = "presymptomatic"
+    symptomatic = "symptomatic"
+    uninvasive_test = "uninvasive_test"
+    invasive_test = "invasive_test"
+    positive_confirmation = "positive_confirmation"
+    negative_confirmation = "negative_confirmation"
+    ambiguous_test_outcome = "ambiguous_test_outcome"
+    other = "other"
+
+
 # --- Domain models ---
 
 
@@ -146,6 +174,73 @@ class Event(BaseModel):
     entity_references: list[EntityReference] = Field(default_factory=list)
 
 
+class Species(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    ploidy: int = 2
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+    chromosome_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class Chromosome(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    base_pairs: Optional[int] = None
+    source: Optional[ChromosomeSource] = None
+    autosome: bool = True
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+    marker_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class Marker(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    type: Optional[MarkerType] = None
+    chromosome_band: str = ""
+    base_pairs: Optional[int] = None
+    centimorgans: Optional[int] = None
+    mckusick_number: str = ""
+    enzyme_used: str = ""
+    probe_used: str = ""
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class Disease(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    color: str = ""
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+    marker_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class Manifestation(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    date: Optional[str] = None
+    numeric_value: Optional[int] = None
+    certainty: Optional[str] = None
+    certainty_notes: str = ""
+    status: Optional[ManifestationStatus] = None
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualDisease(BaseModel):
+    disease_id: uuid.UUID
+    manifestations: list[Manifestation] = Field(default_factory=list)
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualMarker(BaseModel):
+    marker_id: uuid.UUID
+    allele_1: str = ""
+    allele_2: str = ""
+    zygosity: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
 class Individual(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     display_name: str = ""
@@ -164,6 +259,9 @@ class Individual(BaseModel):
     alcohol_units_per_week: Optional[float] = None
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
+    species_id: Optional[uuid.UUID] = None
+    diseases: list[IndividualDisease] = Field(default_factory=list)
+    markers: list[IndividualMarker] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
 
@@ -228,6 +326,115 @@ class PedigreeUpdate(BaseModel):
     properties: Optional[dict] = None
 
 
+class SpeciesCreate(BaseModel):
+    display_name: str = ""
+    ploidy: int = 2
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class SpeciesUpdate(BaseModel):
+    display_name: Optional[str] = None
+    ploidy: Optional[int] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class ChromosomeCreate(BaseModel):
+    display_name: str = ""
+    base_pairs: Optional[int] = None
+    source: Optional[ChromosomeSource] = None
+    autosome: bool = True
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class ChromosomeUpdate(BaseModel):
+    display_name: Optional[str] = None
+    base_pairs: Optional[int] = None
+    source: Optional[ChromosomeSource] = None
+    autosome: Optional[bool] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class MarkerCreate(BaseModel):
+    display_name: str = ""
+    type: Optional[MarkerType] = None
+    chromosome_band: str = ""
+    base_pairs: Optional[int] = None
+    centimorgans: Optional[int] = None
+    mckusick_number: str = ""
+    enzyme_used: str = ""
+    probe_used: str = ""
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class MarkerUpdate(BaseModel):
+    display_name: Optional[str] = None
+    type: Optional[MarkerType] = None
+    chromosome_band: Optional[str] = None
+    base_pairs: Optional[int] = None
+    centimorgans: Optional[int] = None
+    mckusick_number: Optional[str] = None
+    enzyme_used: Optional[str] = None
+    probe_used: Optional[str] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class DiseaseCreate(BaseModel):
+    display_name: str = ""
+    color: str = ""
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class DiseaseUpdate(BaseModel):
+    display_name: Optional[str] = None
+    color: Optional[str] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class ManifestationCreate(BaseModel):
+    date: Optional[str] = None
+    numeric_value: Optional[int] = None
+    certainty: Optional[str] = None
+    certainty_notes: str = ""
+    status: Optional[ManifestationStatus] = None
+    properties: dict = Field(default_factory=dict)
+
+
+class ManifestationUpdate(BaseModel):
+    date: Optional[str] = None
+    numeric_value: Optional[int] = None
+    certainty: Optional[str] = None
+    certainty_notes: Optional[str] = None
+    status: Optional[ManifestationStatus] = None
+    properties: Optional[dict] = None
+
+
+class IndividualDiseaseCreate(BaseModel):
+    disease_id: uuid.UUID
+
+
+class IndividualMarkerCreate(BaseModel):
+    marker_id: uuid.UUID
+    allele_1: str = ""
+    allele_2: str = ""
+    zygosity: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualMarkerUpdate(BaseModel):
+    allele_1: Optional[str] = None
+    allele_2: Optional[str] = None
+    zygosity: Optional[str] = None
+    properties: Optional[dict] = None
+
+
 class IndividualCreate(BaseModel):
     display_name: str = ""
     name: PersonName = Field(default_factory=PersonName)
@@ -245,6 +452,9 @@ class IndividualCreate(BaseModel):
     alcohol_units_per_week: Optional[float] = None
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
+    species_id: Optional[uuid.UUID] = None
+    diseases: list[IndividualDiseaseCreate] = Field(default_factory=list)
+    markers: list[IndividualMarkerCreate] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
 
 
@@ -265,6 +475,7 @@ class IndividualUpdate(BaseModel):
     alcohol_units_per_week: Optional[float] = None
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
+    species_id: Optional[uuid.UUID] = None
     properties: Optional[dict] = None
 
 

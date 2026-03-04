@@ -5,10 +5,18 @@ import { initPanel, openPanel, closePanel } from "./panel";
 import { initPedigreePanel, openPedigreePanel, closePedigreePanel } from "./panel-pedigree";
 import { initRelationshipPanel, openRelationshipPanel, closeRelationshipPanel } from "./panel-relationship";
 import { initEggPanel, openEggPanel, closeEggPanel } from "./panel-egg";
+import { initGeneticsPanel, openGeneticsPanel, closeGeneticsPanel } from "./panel-genetics";
+import { initDiseasePalette, openDiseasePalette, closeDiseasePalette, isDiseasePaletteOpen, refreshDiseasePalette } from "./disease-palette";
 import { PanelCallbacks } from "./panel-utils";
 import { cssVar, toggleTheme, fontSettings, updateFontSettings, getCanvasFontWithSize } from "./theme";
 
 // --- Types ---
+
+interface IndividualDiseaseEntry {
+  disease_id: string;
+  manifestations: unknown[];
+  properties: Record<string, unknown>;
+}
 
 interface PlacedIndividual {
   id: string;
@@ -21,6 +29,13 @@ interface PlacedIndividual {
   display_name: string;
   name: { given?: string[]; family?: string; prefix?: string; suffix?: string };
   notes: string;
+  diseases: IndividualDiseaseEntry[];
+}
+
+interface DiseaseInfo {
+  id: string;
+  display_name: string;
+  color: string;
 }
 
 interface PlacedRelationship {
@@ -66,6 +81,8 @@ app.innerHTML = `
       <button id="btn-zoom-out" title="Zoom out">&minus;</button>
       <button id="btn-zoom-reset" title="Reset zoom">1:1</button>
       <span class="separator"></span>
+      <button id="btn-diseases" title="Toggle disease palette">Diseases</button>
+      <button id="btn-genetics" title="Genetics management">Genetics</button>
       <button id="btn-pedigree" title="Pedigree properties">Pedigree</button>
       <div class="font-settings">
         <button id="btn-font" title="Font settings">Font</button>
@@ -99,6 +116,7 @@ app.innerHTML = `
   <input type="file" id="file-ged" accept=".ged,.gedcom" style="display:none">
   <input type="file" id="file-xeg" accept=".xeg" style="display:none">
   <canvas id="canvas"></canvas>
+  <div id="disease-palette" class="disease-palette hidden"></div>
   <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <div id="find-bar" class="find-bar hidden">
@@ -122,6 +140,8 @@ const btnGrid = document.getElementById("btn-grid") as HTMLButtonElement;
 const btnFind = document.getElementById("btn-find") as HTMLButtonElement;
 const btnAddNote = document.getElementById("btn-add-note") as HTMLButtonElement;
 const btnToggleNotes = document.getElementById("btn-toggle-notes") as HTMLButtonElement;
+const btnDiseases = document.getElementById("btn-diseases") as HTMLButtonElement;
+const btnGenetics = document.getElementById("btn-genetics") as HTMLButtonElement;
 const btnPedigree = document.getElementById("btn-pedigree") as HTMLButtonElement;
 const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
 const fontPopup = document.getElementById("font-popup") as HTMLDivElement;
@@ -162,6 +182,7 @@ let pedigreeId: string | null = null;
 let individuals: PlacedIndividual[] = [];
 let relationships: PlacedRelationship[] = [];
 let eggs: PlacedEgg[] = [];
+let diseaseCatalog: Map<string, DiseaseInfo> = new Map();
 let drawing = false;
 let points: Point[] = [];
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -184,6 +205,7 @@ type PanelTarget =
   | { type: "relationship"; id: string }
   | { type: "egg"; id: string }
   | { type: "pedigree" }
+  | { type: "genetics" }
   | null;
 
 let activePanelTarget: PanelTarget = null;
@@ -370,6 +392,15 @@ initPanel(panelCallbacks);
 initPedigreePanel(panelCallbacks);
 initRelationshipPanel(panelCallbacks);
 initEggPanel(panelCallbacks);
+initGeneticsPanel(panelCallbacks);
+initDiseasePalette(panelCallbacks, {
+  getSelectedIds: () => selectedIds,
+  getSelectedIndividualId: () => selectedIndividualId,
+  getIndividualDiseases: (id: string) => {
+    const ind = individuals.find((i) => i.id === id);
+    return ind ? ind.diseases.map((d) => d.disease_id) : [];
+  },
+});
 
 function closeActivePanel(): void {
   if (!activePanelTarget) return;
@@ -378,6 +409,7 @@ function closeActivePanel(): void {
     case "relationship": closeRelationshipPanel(); break;
     case "egg": closeEggPanel(); break;
     case "pedigree": closePedigreePanel(); break;
+    case "genetics": closeGeneticsPanel(); break;
   }
   activePanelTarget = null;
 }
@@ -399,6 +431,9 @@ async function openPanelFor(target: PanelTarget): Promise<void> {
       break;
     case "pedigree":
       if (pedigreeId) await openPedigreePanel(pedigreeId);
+      break;
+    case "genetics":
+      await openGeneticsPanel();
       break;
   }
 }
@@ -1340,19 +1375,33 @@ async function handleGroupDragEnd(movedIndividuals: { id: string; x: number; y: 
 
 // --- Shared state refresh ---
 
+async function refreshDiseases() {
+  try {
+    const list = await api<DiseaseInfo[]>("/api/diseases");
+    diseaseCatalog = new Map(list.map((d) => [d.id, d]));
+  } catch {
+    // Disease catalog unavailable — symbols render without disease fills
+  }
+}
+
 async function refreshState() {
   if (!pedigreeId) return;
-  const detail = await api<{
-    individuals: PlacedIndividual[];
-    relationships: PlacedRelationship[];
-    eggs: PlacedEgg[];
-    properties: Record<string, unknown>;
-  }>(`/api/pedigrees/${pedigreeId}`);
+  const [detail] = await Promise.all([
+    api<{
+      individuals: PlacedIndividual[];
+      relationships: PlacedRelationship[];
+      eggs: PlacedEgg[];
+      properties: Record<string, unknown>;
+    }>(`/api/pedigrees/${pedigreeId}`),
+    refreshDiseases(),
+  ]);
   individuals = detail.individuals;
   relationships = detail.relationships ?? [];
   eggs = detail.eggs ?? [];
   // Load floating notes from pedigree properties
   floatingNotes = (detail.properties?.floating_notes as FloatingNote[]) ?? [];
+  // Refresh disease palette (non-blocking)
+  refreshDiseasePalette();
 }
 
 /** Assign grid positions to individuals that have no x/y, then PATCH them. */
@@ -2710,6 +2759,9 @@ function render() {
     const { x, y, biological_sex } = ind;
     if (x == null || y == null) continue;
 
+    const diseaseColors: string[] = (ind.diseases ?? [])
+      .map((d) => diseaseCatalog.get(d.disease_id)?.color)
+      .filter((c): c is string => !!c);
     const spec: SymbolSpec = {
       sex: biological_sex ?? "unknown",
       deathStatus: (ind.properties?.death_status as string) ?? "alive",
@@ -2717,6 +2769,7 @@ function render() {
       fertilityStatus: (ind.properties?.fertility_status as string) ?? "unknown",
       proband: ind.proband ?? 0,
       probandText: ind.proband_text ?? "",
+      diseaseColors,
     };
     const isSelected = selectedIds.has(ind.id) || selectedIndividualId === ind.id;
     drawIndividual(ctx, x, y, SHAPE_SIZE, spec, isSelected, symbolColors);
@@ -2875,6 +2928,20 @@ btnToggleNotes.addEventListener("click", () => {
   render();
 });
 btnToggleNotes.classList.toggle("active", showAllFloatingNotes);
+
+btnDiseases.addEventListener("click", () => {
+  if (isDiseasePaletteOpen()) {
+    closeDiseasePalette();
+    btnDiseases.classList.remove("active");
+  } else {
+    openDiseasePalette();
+    btnDiseases.classList.add("active");
+  }
+});
+
+btnGenetics.addEventListener("click", () => {
+  openPanelFor({ type: "genetics" });
+});
 
 btnPedigree.addEventListener("click", () => {
   openPanelFor({ type: "pedigree" });

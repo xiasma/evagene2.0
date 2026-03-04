@@ -4,8 +4,9 @@ import uuid
 from datetime import datetime, timezone
 
 from .models import (
-    Egg, Event, Individual, Pedigree, PedigreeDetail, PersonName, Relationship,
-    SmokerType, VCardContact,
+    Chromosome, ChromosomeSource, Disease, Egg, Event, Individual,
+    IndividualDisease, IndividualMarker, Manifestation, Marker, Pedigree,
+    PedigreeDetail, PersonName, Relationship, Species, SmokerType, VCardContact,
 )
 
 
@@ -15,8 +16,14 @@ class Store:
         self.relationships: dict[uuid.UUID, Relationship] = {}
         self.eggs: dict[uuid.UUID, Egg] = {}
         self.pedigrees: dict[uuid.UUID, Pedigree] = {}
+        self.species: dict[uuid.UUID, Species] = {}
+        self.chromosomes: dict[uuid.UUID, Chromosome] = {}
+        self.markers: dict[uuid.UUID, Marker] = {}
+        self.diseases: dict[uuid.UUID, Disease] = {}
         # event_id -> (owner_id, event_index) for fast lookup
         self._event_index: dict[uuid.UUID, tuple[uuid.UUID, int]] = {}
+        self._seed_default_species()
+        self._seed_default_diseases()
 
     # --- Individuals ---
 
@@ -38,6 +45,9 @@ class Store:
         alcohol_units_per_week: float | None = None,
         smoker: SmokerType | None = None,
         smoking_per_day: int | None = None,
+        species_id: uuid.UUID | None = None,
+        diseases: list[IndividualDisease] | None = None,
+        markers: list[IndividualMarker] | None = None,
         properties: dict | None = None,
     ) -> Individual:
         ind = Individual(
@@ -57,6 +67,9 @@ class Store:
             alcohol_units_per_week=alcohol_units_per_week,
             smoker=smoker,
             smoking_per_day=smoking_per_day,
+            species_id=species_id,
+            diseases=diseases or [],
+            markers=markers or [],
             properties=properties or {},
         )
         self.individuals[ind.id] = ind
@@ -365,6 +378,306 @@ class Store:
             relationships=relationships,
             eggs=eggs,
         )
+
+    # --- Species ---
+
+    def _seed_default_species(self) -> None:
+        sp = Species(display_name="Homo sapiens", ploidy=2)
+        self.species[sp.id] = sp
+        chr_names = [str(i) for i in range(1, 23)] + ["X", "Y", "Unknown"]
+        for name in chr_names:
+            autosome = name not in ("X", "Y", "Unknown")
+            source = ChromosomeSource.parents if name != "Unknown" else ChromosomeSource.unknown
+            ch = Chromosome(display_name=name, autosome=autosome, source=source)
+            self.chromosomes[ch.id] = ch
+            sp.chromosome_ids.append(ch.id)
+
+    def _seed_default_diseases(self) -> None:
+        defaults = [
+            ("Breast Cancer", "#FF69B4"),
+            ("Ovarian Cancer", "#7B68EE"),
+            ("Colon Cancer", "#8B4513"),
+            ("Endometrial Cancer", "#DC143C"),
+            ("Pancreatic Cancer", "#4B0082"),
+        ]
+        for name, color in defaults:
+            d = Disease(display_name=name, color=color)
+            self.diseases[d.id] = d
+
+    def create_species(
+        self,
+        display_name: str = "",
+        ploidy: int = 2,
+        notes: str = "",
+        properties: dict | None = None,
+    ) -> Species:
+        sp = Species(
+            display_name=display_name,
+            ploidy=ploidy,
+            notes=notes,
+            properties=properties or {},
+        )
+        self.species[sp.id] = sp
+        return sp
+
+    def get_species(self, id: uuid.UUID) -> Species | None:
+        return self.species.get(id)
+
+    def list_species(self) -> list[Species]:
+        return list(self.species.values())
+
+    def update_species(self, id: uuid.UUID, **fields) -> Species | None:
+        sp = self.species.get(id)
+        if sp is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(sp, k, v)
+        return sp
+
+    def delete_species(self, id: uuid.UUID) -> bool:
+        return self.species.pop(id, None) is not None
+
+    def add_chromosome_to_species(self, species_id: uuid.UUID, chr_id: uuid.UUID) -> bool:
+        sp = self.species.get(species_id)
+        if sp is None:
+            return False
+        if chr_id not in sp.chromosome_ids:
+            sp.chromosome_ids.append(chr_id)
+        return True
+
+    def remove_chromosome_from_species(self, species_id: uuid.UUID, chr_id: uuid.UUID) -> bool:
+        sp = self.species.get(species_id)
+        if sp is None or chr_id not in sp.chromosome_ids:
+            return False
+        sp.chromosome_ids.remove(chr_id)
+        return True
+
+    # --- Chromosomes ---
+
+    def create_chromosome(
+        self,
+        display_name: str = "",
+        base_pairs: int | None = None,
+        source=None,
+        autosome: bool = True,
+        notes: str = "",
+        properties: dict | None = None,
+    ) -> Chromosome:
+        ch = Chromosome(
+            display_name=display_name,
+            base_pairs=base_pairs,
+            source=source,
+            autosome=autosome,
+            notes=notes,
+            properties=properties or {},
+        )
+        self.chromosomes[ch.id] = ch
+        return ch
+
+    def get_chromosome(self, id: uuid.UUID) -> Chromosome | None:
+        return self.chromosomes.get(id)
+
+    def list_chromosomes(self) -> list[Chromosome]:
+        return list(self.chromosomes.values())
+
+    def update_chromosome(self, id: uuid.UUID, **fields) -> Chromosome | None:
+        ch = self.chromosomes.get(id)
+        if ch is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(ch, k, v)
+        return ch
+
+    def delete_chromosome(self, id: uuid.UUID) -> bool:
+        return self.chromosomes.pop(id, None) is not None
+
+    def add_marker_to_chromosome(self, chr_id: uuid.UUID, marker_id: uuid.UUID) -> bool:
+        ch = self.chromosomes.get(chr_id)
+        if ch is None:
+            return False
+        if marker_id not in ch.marker_ids:
+            ch.marker_ids.append(marker_id)
+        return True
+
+    def remove_marker_from_chromosome(self, chr_id: uuid.UUID, marker_id: uuid.UUID) -> bool:
+        ch = self.chromosomes.get(chr_id)
+        if ch is None or marker_id not in ch.marker_ids:
+            return False
+        ch.marker_ids.remove(marker_id)
+        return True
+
+    # --- Markers ---
+
+    def create_marker(self, **fields) -> Marker:
+        m = Marker(**{k: v for k, v in fields.items() if v is not None})
+        self.markers[m.id] = m
+        return m
+
+    def get_marker(self, id: uuid.UUID) -> Marker | None:
+        return self.markers.get(id)
+
+    def list_markers(self) -> list[Marker]:
+        return list(self.markers.values())
+
+    def update_marker(self, id: uuid.UUID, **fields) -> Marker | None:
+        m = self.markers.get(id)
+        if m is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(m, k, v)
+        return m
+
+    def delete_marker(self, id: uuid.UUID) -> bool:
+        return self.markers.pop(id, None) is not None
+
+    # --- Diseases ---
+
+    def create_disease(
+        self,
+        display_name: str = "",
+        color: str = "",
+        notes: str = "",
+        properties: dict | None = None,
+    ) -> Disease:
+        d = Disease(
+            display_name=display_name,
+            color=color,
+            notes=notes,
+            properties=properties or {},
+        )
+        self.diseases[d.id] = d
+        return d
+
+    def get_disease(self, id: uuid.UUID) -> Disease | None:
+        return self.diseases.get(id)
+
+    def list_diseases(self) -> list[Disease]:
+        return list(self.diseases.values())
+
+    def update_disease(self, id: uuid.UUID, **fields) -> Disease | None:
+        d = self.diseases.get(id)
+        if d is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(d, k, v)
+        return d
+
+    def delete_disease(self, id: uuid.UUID) -> bool:
+        return self.diseases.pop(id, None) is not None
+
+    def add_marker_to_disease(self, disease_id: uuid.UUID, marker_id: uuid.UUID) -> bool:
+        d = self.diseases.get(disease_id)
+        if d is None:
+            return False
+        if marker_id not in d.marker_ids:
+            d.marker_ids.append(marker_id)
+        return True
+
+    def remove_marker_from_disease(self, disease_id: uuid.UUID, marker_id: uuid.UUID) -> bool:
+        d = self.diseases.get(disease_id)
+        if d is None or marker_id not in d.marker_ids:
+            return False
+        d.marker_ids.remove(marker_id)
+        return True
+
+    # --- Individual diseases / markers / manifestations ---
+
+    def add_disease_to_individual(self, ind_id: uuid.UUID, disease_id: uuid.UUID) -> IndividualDisease | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                return d
+        entry = IndividualDisease(disease_id=disease_id)
+        ind.diseases.append(entry)
+        return entry
+
+    def remove_disease_from_individual(self, ind_id: uuid.UUID, disease_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        before = len(ind.diseases)
+        ind.diseases = [d for d in ind.diseases if d.disease_id != disease_id]
+        return len(ind.diseases) < before
+
+    def add_manifestation(self, ind_id: uuid.UUID, disease_id: uuid.UUID, manifestation: Manifestation) -> Manifestation | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                d.manifestations.append(manifestation)
+                return manifestation
+        return None
+
+    def list_manifestations(self, ind_id: uuid.UUID, disease_id: uuid.UUID) -> list[Manifestation] | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                return d.manifestations
+        return None
+
+    def update_manifestation(self, ind_id: uuid.UUID, disease_id: uuid.UUID, manif_id: uuid.UUID, **fields) -> Manifestation | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                for m in d.manifestations:
+                    if m.id == manif_id:
+                        for k, v in fields.items():
+                            if v is not None:
+                                setattr(m, k, v)
+                        return m
+        return None
+
+    def delete_manifestation(self, ind_id: uuid.UUID, disease_id: uuid.UUID, manif_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                before = len(d.manifestations)
+                d.manifestations = [m for m in d.manifestations if m.id != manif_id]
+                return len(d.manifestations) < before
+        return False
+
+    def add_marker_to_individual(self, ind_id: uuid.UUID, marker: IndividualMarker) -> IndividualMarker | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for m in ind.markers:
+            if m.marker_id == marker.marker_id:
+                return m
+        ind.markers.append(marker)
+        return marker
+
+    def update_individual_marker(self, ind_id: uuid.UUID, marker_id: uuid.UUID, **fields) -> IndividualMarker | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for m in ind.markers:
+            if m.marker_id == marker_id:
+                for k, v in fields.items():
+                    if v is not None:
+                        setattr(m, k, v)
+                return m
+        return None
+
+    def remove_marker_from_individual(self, ind_id: uuid.UUID, marker_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        before = len(ind.markers)
+        ind.markers = [m for m in ind.markers if m.marker_id != marker_id]
+        return len(ind.markers) < before
 
     # --- Events ---
 

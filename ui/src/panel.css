@@ -426,3 +426,140 @@
 .modal-buttons button.primary:hover {
   background: var(--color-accent-hover);
 }
+
+/* --- Genetics panel tabs --- */
+
+.genetics-tab-bar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 6px;
+}
+
+.genetics-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+
+.genetics-tab:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+
+.genetics-tab.active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+.genetics-tab-content {
+  /* just a wrapper */
+}
+
+/* --- Resource badges (diseases/markers on individual panel) --- */
+
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.resource-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface-alt);
+  transition: border-color var(--duration-fast);
+}
+
+.resource-badge:hover {
+  border-color: var(--color-border);
+}
+
+.disease-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.badge-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1;
+  color: var(--color-text-subtle);
+  padding: 0 1px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+
+.badge-remove:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+}
+
+/* Marker badge with inline allele inputs */
+
+.marker-badge {
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.marker-badge-name {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.marker-allele-input {
+  width: 36px;
+  padding: 2px 4px !important;
+  font-size: 0.68rem !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 4px !important;
+  background: var(--color-surface) !important;
+  color: var(--color-text);
+  font-family: inherit;
+  outline: none;
+}
+
+.marker-allele-input:focus {
+  border-color: var(--color-accent) !important;
+}
+
+/* Sub-resource labels/sections in genetics panel */
+
+.sub-resource-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-subtle);
+  margin: 8px 0 4px;
+}
+
+.sub-resource-section {
+  margin-top: 6px;
+}

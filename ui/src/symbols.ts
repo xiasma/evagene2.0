@@ -10,6 +10,7 @@ export interface SymbolSpec {
   fertilityStatus: string;  // properties.fertility_status ?? "unknown"
   proband: number;          // 0-360, 0 means no arrow
   probandText: string;      // label shown near the arrow
+  diseaseColors: string[];  // hex colors from diseases on this individual
 }
 
 export interface SymbolColors {
@@ -192,6 +193,11 @@ export function drawIndividual(
   }
   ctx.setLineDash([]);
 
+  // --- Layer 1.5: Disease color fill ---
+  if (spec.diseaseColors.length > 0) {
+    drawDiseaseSectors(ctx, cx, cy, scale, spec.diseaseColors, basePath);
+  }
+
   // --- Layer 2: Affection overlay ---
   drawAffection(ctx, cx, cy, scale, spec.affectionStatus, basePath, shapeType, fillColor);
 
@@ -207,6 +213,52 @@ export function drawIndividual(
   }
 
   ctx.restore();
+}
+
+// --- Layer 1.5: Disease sectors ---
+
+function drawDiseaseSectors(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scale: number,
+  colors: string[],
+  basePath: Path2D,
+): void {
+  const n = colors.length;
+  if (n === 1) {
+    // Single disease — fill entire shape
+    ctx.save();
+    ctx.clip(basePath);
+    ctx.fillStyle = colors[0];
+    ctx.fillRect(cx - 24 * scale, cy - 24 * scale, 48 * scale, 48 * scale);
+    ctx.restore();
+    return;
+  }
+
+  // Multiple diseases — draw pie sectors clipped to base shape.
+  // Start from top (12 o'clock = -π/2), clockwise.
+  const startAngle = -Math.PI / 2;
+  const sectorAngle = (2 * Math.PI) / n;
+  const r = 24 * scale; // radius large enough to cover any base shape
+
+  for (let i = 0; i < n; i++) {
+    ctx.save();
+    ctx.clip(basePath);
+
+    const a0 = startAngle + i * sectorAngle;
+    const a1 = a0 + sectorAngle;
+
+    const sector = new Path2D();
+    sector.moveTo(cx, cy);
+    sector.arc(cx, cy, r * 2, a0, a1);
+    sector.closePath();
+
+    ctx.clip(sector);
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(cx - 24 * scale, cy - 24 * scale, 48 * scale, 48 * scale);
+    ctx.restore();
+  }
 }
 
 // --- Layer 2: Affection ---

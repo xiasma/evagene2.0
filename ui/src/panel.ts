@@ -15,6 +15,32 @@ import { buildEventEditor } from "./event-editor";
 
 // --- Types ---
 
+interface IndividualDiseaseEntry {
+  disease_id: string;
+  manifestations: unknown[];
+  properties: Record<string, unknown>;
+}
+
+interface IndividualMarkerEntry {
+  marker_id: string;
+  allele_1: string;
+  allele_2: string;
+  zygosity: string;
+  properties: Record<string, unknown>;
+}
+
+interface CatalogDisease {
+  id: string;
+  display_name: string;
+  color: string;
+}
+
+interface CatalogMarker {
+  id: string;
+  display_name: string;
+  type: string | null;
+}
+
 interface IndividualData {
   id: string;
   display_name: string;
@@ -35,6 +61,8 @@ interface IndividualData {
     email: { value: string; type: string }[];
   }>;
   events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
+  diseases: IndividualDiseaseEntry[];
+  markers: IndividualMarkerEntry[];
 }
 
 // --- Module state ---
@@ -43,6 +71,8 @@ let callbacks: PanelCallbacks;
 let sidebar: HTMLDivElement;
 let currentId: string | null = null;
 let debouncer = new DebouncerGroup();
+let diseaseCatalog: CatalogDisease[] = [];
+let markerCatalog: CatalogMarker[] = [];
 
 // --- Dropdown option lists ---
 
@@ -129,7 +159,13 @@ export async function openPanel(individualId: string): Promise<void> {
     sidebar.style.left = "auto";
   }
 
-  const data = await callbacks.api<IndividualData>(`/api/individuals/${individualId}`);
+  const [data, diseases, markers] = await Promise.all([
+    callbacks.api<IndividualData>(`/api/individuals/${individualId}`),
+    callbacks.api<CatalogDisease[]>("/api/diseases").catch(() => [] as CatalogDisease[]),
+    callbacks.api<CatalogMarker[]>("/api/markers").catch(() => [] as CatalogMarker[]),
+  ]);
+  diseaseCatalog = diseases;
+  markerCatalog = markers;
   buildDOM(data);
 }
 
@@ -349,6 +385,163 @@ function buildDOM(data: IndividualData): void {
     callbacks,
   });
 
+  // --- Diseases section ---
+  const diseasesSection = document.createElement("div");
+  diseasesSection.append(heading("Diseases"));
+
+  const diseaseBadges = document.createElement("div");
+  diseaseBadges.className = "badge-list";
+  const assignedDiseaseIds = (data.diseases ?? []).map((d) => d.disease_id);
+
+  for (const entry of data.diseases ?? []) {
+    const cat = diseaseCatalog.find((d) => d.id === entry.disease_id);
+    const badge = document.createElement("div");
+    badge.className = "resource-badge";
+    const dot = document.createElement("span");
+    dot.className = "disease-dot";
+    dot.style.background = cat?.color || "#999";
+    const name = document.createElement("span");
+    name.textContent = cat?.display_name || entry.disease_id;
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "badge-remove";
+    removeBtn.textContent = "\u00d7";
+    removeBtn.addEventListener("click", async () => {
+      callbacks.onBeforeMutation();
+      try {
+        await callbacks.api(`/api/individuals/${data.id}/diseases/${entry.disease_id}`, { method: "DELETE" });
+        await callbacks.onUpdate();
+        // Refresh panel
+        if (currentId) openPanel(currentId);
+      } catch (err) {
+        console.error("Failed to remove disease:", err);
+      }
+    });
+    badge.append(dot, name, removeBtn);
+    diseaseBadges.append(badge);
+  }
+  diseasesSection.append(diseaseBadges);
+
+  // Add disease dropdown
+  const unassignedDiseases = diseaseCatalog.filter((d) => !assignedDiseaseIds.includes(d.id));
+  if (unassignedDiseases.length > 0) {
+    const addDiseaseSel = makeSelect([
+      ["", "Add disease..."],
+      ...unassignedDiseases.map((d) => [d.id, d.display_name || d.id]),
+    ]);
+    addDiseaseSel.addEventListener("change", async () => {
+      if (!addDiseaseSel.value) return;
+      callbacks.onBeforeMutation();
+      try {
+        await callbacks.api(`/api/individuals/${data.id}/diseases`, {
+          method: "POST",
+          body: JSON.stringify({ disease_id: addDiseaseSel.value }),
+        });
+        await callbacks.onUpdate();
+        if (currentId) openPanel(currentId);
+      } catch (err) {
+        console.error("Failed to add disease:", err);
+      }
+    });
+    diseasesSection.append(addDiseaseSel);
+  }
+
+  // --- Markers section ---
+  const markersSection = document.createElement("div");
+  markersSection.append(heading("Markers"));
+
+  const markerBadges = document.createElement("div");
+  markerBadges.className = "badge-list";
+  const assignedMarkerIds = (data.markers ?? []).map((m) => m.marker_id);
+
+  for (const entry of data.markers ?? []) {
+    const cat = markerCatalog.find((m) => m.id === entry.marker_id);
+    const badge = document.createElement("div");
+    badge.className = "resource-badge marker-badge";
+
+    const name = document.createElement("span");
+    name.className = "marker-badge-name";
+    name.textContent = cat?.display_name || entry.marker_id;
+
+    // Inline editable alleles
+    const allele1 = makeInput();
+    allele1.className = "marker-allele-input";
+    allele1.value = entry.allele_1;
+    allele1.placeholder = "A1";
+    allele1.addEventListener("change", () => {
+      callbacks.onBeforeMutation();
+      callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ allele_1: allele1.value }),
+      }).then(() => callbacks.onUpdate());
+    });
+
+    const allele2 = makeInput();
+    allele2.className = "marker-allele-input";
+    allele2.value = entry.allele_2;
+    allele2.placeholder = "A2";
+    allele2.addEventListener("change", () => {
+      callbacks.onBeforeMutation();
+      callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ allele_2: allele2.value }),
+      }).then(() => callbacks.onUpdate());
+    });
+
+    const zyg = makeInput();
+    zyg.className = "marker-allele-input";
+    zyg.value = entry.zygosity;
+    zyg.placeholder = "Zyg";
+    zyg.addEventListener("change", () => {
+      callbacks.onBeforeMutation();
+      callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ zygosity: zyg.value }),
+      }).then(() => callbacks.onUpdate());
+    });
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "badge-remove";
+    removeBtn.textContent = "\u00d7";
+    removeBtn.addEventListener("click", async () => {
+      callbacks.onBeforeMutation();
+      try {
+        await callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, { method: "DELETE" });
+        await callbacks.onUpdate();
+        if (currentId) openPanel(currentId);
+      } catch (err) {
+        console.error("Failed to remove marker:", err);
+      }
+    });
+
+    badge.append(name, allele1, allele2, zyg, removeBtn);
+    markerBadges.append(badge);
+  }
+  markersSection.append(markerBadges);
+
+  // Add marker dropdown
+  const unassignedMarkers = markerCatalog.filter((m) => !assignedMarkerIds.includes(m.id));
+  if (unassignedMarkers.length > 0) {
+    const addMarkerSel = makeSelect([
+      ["", "Add marker..."],
+      ...unassignedMarkers.map((m) => [m.id, m.display_name || m.id]),
+    ]);
+    addMarkerSel.addEventListener("change", async () => {
+      if (!addMarkerSel.value) return;
+      callbacks.onBeforeMutation();
+      try {
+        await callbacks.api(`/api/individuals/${data.id}/markers`, {
+          method: "POST",
+          body: JSON.stringify({ marker_id: addMarkerSel.value }),
+        });
+        await callbacks.onUpdate();
+        if (currentId) openPanel(currentId);
+      } catch (err) {
+        console.error("Failed to add marker:", err);
+      }
+    });
+    markersSection.append(addMarkerSel);
+  }
+
   // Assemble DOM
   body.append(
     heading("Identity"),
@@ -384,5 +577,8 @@ function buildDOM(data: IndividualData): void {
     makeField("Email", elEmail),
 
     eventEditor,
+
+    diseasesSection,
+    markersSection,
   );
 }

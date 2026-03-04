@@ -417,3 +417,53 @@ p {
   outline: none;
   transition: border-color var(--duration-fast);
 }
+
+/* --- Disease palette --- */
+
+.disease-palette {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+
+.disease-palette.hidden {
+  display: none;
+}
+
+.disease-palette-empty {
+  font-size: 0.72rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+}
+
+.disease-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background: var(--swatch-color, #999);
+  cursor: pointer;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
+              transform var(--duration-fast);
+  padding: 0;
+}
+
+.disease-swatch:hover {
+  border-color: var(--color-text-muted);
+  transform: scale(1.1);
+}
+
+.disease-swatch.active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
