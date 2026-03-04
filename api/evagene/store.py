@@ -113,6 +113,15 @@ class Store:
     def list_relationships(self) -> list[Relationship]:
         return list(self.relationships.values())
 
+    def update_relationship(self, id: uuid.UUID, **fields) -> Relationship | None:
+        rel = self.relationships.get(id)
+        if rel is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(rel, k, v)
+        return rel
+
     def delete_relationship(self, id: uuid.UUID) -> bool:
         rel = self.relationships.pop(id, None)
         if rel is None:

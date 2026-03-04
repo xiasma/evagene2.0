@@ -275,6 +275,12 @@ class RelationshipCreate(BaseModel):
     properties: dict = Field(default_factory=dict)
 
 
+class RelationshipUpdate(BaseModel):
+    display_name: Optional[str] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
 class EggCreate(BaseModel):
     display_name: str = ""
     notes: str = ""

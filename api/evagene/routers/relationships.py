@@ -12,6 +12,7 @@ from ..models import (
     Relationship,
     RelationshipCreate,
     RelationshipEventCreate,
+    RelationshipUpdate,
 )
 from ..store import store
 
@@ -36,6 +37,15 @@ def list_relationships():
 @router.get("/{relationship_id}", response_model=Relationship)
 def get_relationship(relationship_id: uuid.UUID):
     rel = store.get_relationship(relationship_id)
+    if rel is None:
+        raise HTTPException(404, "Relationship not found")
+    return rel
+
+
+@router.patch("/{relationship_id}", response_model=Relationship)
+def update_relationship(relationship_id: uuid.UUID, body: RelationshipUpdate):
+    fields = body.model_dump(exclude_unset=True)
+    rel = store.update_relationship(relationship_id, **fields)
     if rel is None:
         raise HTTPException(404, "Relationship not found")
     return rel

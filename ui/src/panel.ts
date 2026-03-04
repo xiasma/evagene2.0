@@ -1,14 +1,19 @@
 import "./panel.css";
 import { renderMarkdown } from "./markdown";
+import {
+  PanelCallbacks,
+  DebouncerGroup,
+  buildPanelShell,
+  makeField,
+  makeInput,
+  makeSelect,
+  makeTextarea,
+  makeCheckboxRow,
+  heading,
+} from "./panel-utils";
+import { buildEventEditor } from "./event-editor";
 
 // --- Types ---
-
-interface PanelCallbacks {
-  onUpdate: () => Promise<void>;
-  onClose: () => void;
-  api: <T>(path: string, options?: RequestInit) => Promise<T>;
-  onBeforeMutation: () => void;
-}
 
 interface IndividualData {
   id: string;
@@ -29,6 +34,7 @@ interface IndividualData {
     tel: { value: string; type: string }[];
     email: { value: string; type: string }[];
   }>;
+  events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
 }
 
 // --- Module state ---
@@ -36,36 +42,7 @@ interface IndividualData {
 let callbacks: PanelCallbacks;
 let sidebar: HTMLDivElement;
 let currentId: string | null = null;
-let debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-
-// Field elements
-let elDisplayName: HTMLInputElement;
-let elGivenNames: HTMLInputElement;
-let elSurname: HTMLInputElement;
-let elTitle: HTMLInputElement;
-let elSurnameAtBirth: HTMLInputElement;
-
-let elSex: HTMLSelectElement;
-let elMortality: HTMLSelectElement;
-let elAffection: HTMLSelectElement;
-let elFertility: HTMLSelectElement;
-let elProband: HTMLInputElement;  // range slider 0-360
-let elProbandText: HTMLInputElement;
-let elGeneration: HTMLInputElement;
-
-let elDob: HTMLInputElement;
-let elDod: HTMLInputElement;
-
-let elNotes: HTMLTextAreaElement;
-let elNotesPreview: HTMLDivElement;
-let elNotesToggle: HTMLButtonElement;
-let elShowNotes: HTMLInputElement;
-let notesPreviewMode = false;
-
-let elTelHome: HTMLInputElement;
-let elTelWork: HTMLInputElement;
-let elTelMobile: HTMLInputElement;
-let elEmail: HTMLInputElement;
+let debouncer = new DebouncerGroup();
 
 // --- Dropdown option lists ---
 
@@ -118,119 +95,113 @@ const FERTILITY_OPTIONS = [
   ["other", "Other"],
 ];
 
-// --- DOM builders ---
+const DEAD_STATUSES = new Set([
+  "dead", "suicide_confirmed", "suicide_unconfirmed", "spontaneous_abortion",
+  "therapeutic_abortion", "neonatal_death", "stillborn", "lived_one_day",
+]);
 
-function makeField(label: string, el: HTMLElement): HTMLDivElement {
-  const div = document.createElement("div");
-  div.className = "field";
-  const lbl = document.createElement("label");
-  lbl.textContent = label;
-  div.append(lbl, el);
-  return div;
-}
-
-function makeInput(type = "text"): HTMLInputElement {
-  const input = document.createElement("input");
-  input.type = type;
-  return input;
-}
-
-function makeSelect(options: string[][]): HTMLSelectElement {
-  const sel = document.createElement("select");
-  for (const [value, text] of options) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = text;
-    sel.append(opt);
-  }
-  return sel;
-}
-
-function makeTextarea(): HTMLTextAreaElement {
-  const ta = document.createElement("textarea");
-  ta.rows = 3;
-  return ta;
-}
-
-function makeCheckboxRow(label: string, cb: HTMLInputElement, extra?: HTMLInputElement): HTMLDivElement {
-  const div = document.createElement("div");
-  div.className = "field-row";
-  const lbl = document.createElement("label");
-  lbl.textContent = label;
-  div.append(cb, lbl);
-  if (extra) div.append(extra);
-  return div;
-}
-
-function heading(text: string): HTMLHeadingElement {
-  const h = document.createElement("h3");
-  h.textContent = text;
-  return h;
-}
+const INDIVIDUAL_EVENT_TYPES = [
+  ["birth", "Birth"],
+  ["death", "Death"],
+  ["diagnosis", "Diagnosis"],
+  ["symptom", "Symptom"],
+  ["affection", "Affection"],
+  ["fertility", "Fertility"],
+];
 
 // --- Init ---
 
 export function initPanel(cbs: PanelCallbacks): void {
   callbacks = cbs;
-
   sidebar = document.getElementById("sidebar") as HTMLDivElement;
+}
 
-  // Title bar with drag handle + close button
-  const titlebar = document.createElement("div");
-  titlebar.className = "sidebar-titlebar";
-  const titleText = document.createElement("span");
-  titleText.textContent = "Properties";
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "sidebar-close";
-  closeBtn.textContent = "\u00d7";
-  closeBtn.addEventListener("click", () => {
+// --- Open / Close ---
+
+export async function openPanel(individualId: string): Promise<void> {
+  const wasHidden = sidebar.classList.contains("hidden");
+  currentId = individualId;
+  sidebar.classList.remove("hidden");
+
+  if (wasHidden) {
+    sidebar.style.right = "24px";
+    sidebar.style.top = "80px";
+    sidebar.style.left = "auto";
+  }
+
+  const data = await callbacks.api<IndividualData>(`/api/individuals/${individualId}`);
+  buildDOM(data);
+}
+
+export function closePanel(): void {
+  currentId = null;
+  sidebar.classList.add("hidden");
+  debouncer.clear();
+}
+
+export function isPanelOpen(): boolean {
+  return currentId !== null;
+}
+
+// --- Build DOM from scratch each time ---
+
+function buildDOM(data: IndividualData): void {
+  debouncer.clear();
+  debouncer = new DebouncerGroup();
+
+  const { body } = buildPanelShell(sidebar, "Individual", () => {
     closePanel();
-    cbs.onClose();
+    callbacks.onClose();
   });
-  titlebar.append(titleText, closeBtn);
-  sidebar.append(titlebar);
 
-  // Scrollable body
-  const body = document.createElement("div");
-  body.className = "sidebar-body";
-  sidebar.append(body);
+  // Identity
+  const elDisplayName = makeInput();
+  elDisplayName.value = data.display_name ?? "";
+  const elGivenNames = makeInput();
+  elGivenNames.value = (data.name?.given ?? []).join(" ");
+  const elSurname = makeInput();
+  elSurname.value = data.name?.family ?? "";
+  const elTitle = makeInput();
+  elTitle.value = data.name?.prefix ?? "";
+  const elSurnameAtBirth = makeInput();
+  elSurnameAtBirth.value = (data.properties?.surname_at_birth as string) ?? "";
 
-  // Set up dragging
-  initDrag(titlebar);
-
-  // Identity section
-  elDisplayName = makeInput();
-  elGivenNames = makeInput();
-  elSurname = makeInput();
-  elTitle = makeInput();
-  elSurnameAtBirth = makeInput();
-
-  // Clinical section
-  elSex = makeSelect(SEX_OPTIONS);
-  elMortality = makeSelect(DEATH_OPTIONS);
-  elAffection = makeSelect(AFFECTION_OPTIONS);
-  elFertility = makeSelect(FERTILITY_OPTIONS);
-  elProband = makeInput("range") as HTMLInputElement;
+  // Clinical
+  const elSex = makeSelect(SEX_OPTIONS);
+  elSex.value = data.biological_sex ?? "unknown";
+  const elMortality = makeSelect(DEATH_OPTIONS);
+  elMortality.value = (data.properties?.death_status as string) ?? "alive";
+  const elAffection = makeSelect(AFFECTION_OPTIONS);
+  elAffection.value = (data.properties?.affection_status as string) ?? "unknown";
+  const elFertility = makeSelect(FERTILITY_OPTIONS);
+  elFertility.value = (data.properties?.fertility_status as string) ?? "unknown";
+  const elProband = makeInput("range");
   elProband.min = "0";
   elProband.max = "360";
-  elProband.value = "0";
+  elProband.value = String(data.proband ?? 0);
   elProband.className = "proband-slider";
-  elProbandText = makeInput();
+  const elProbandText = makeInput();
   elProbandText.placeholder = "Proband label";
-  elGeneration = makeInput("number");
+  elProbandText.value = data.proband_text ?? "";
+  const elGeneration = makeInput("number");
+  elGeneration.value = data.generation != null ? String(data.generation) : "";
 
-  // Dates section
-  elDob = makeInput("date");
-  elDod = makeInput("date");
+  // Dates
+  const elDob = makeInput("date");
+  elDob.value = (data.properties?.date_of_birth as string) ?? "";
+  const elDod = makeInput("date");
+  elDod.value = (data.properties?.date_of_death as string) ?? "";
 
-  // Notes section
-  elNotes = makeTextarea();
-  elNotesPreview = document.createElement("div");
+  // Notes
+  const elNotes = makeTextarea();
+  elNotes.value = data.notes ?? "";
+  const elNotesPreview = document.createElement("div");
   elNotesPreview.className = "notes-preview";
   elNotesPreview.style.display = "none";
-  elNotesToggle = document.createElement("button");
+  const elNotesToggle = document.createElement("button");
   elNotesToggle.className = "notes-toggle";
   elNotesToggle.textContent = "Preview";
+  let notesPreviewMode = false;
   elNotesToggle.addEventListener("click", () => {
     notesPreviewMode = !notesPreviewMode;
     if (notesPreviewMode) {
@@ -244,15 +215,141 @@ export function initPanel(cbs: PanelCallbacks): void {
       elNotesToggle.textContent = "Preview";
     }
   });
-  elShowNotes = makeInput("checkbox") as HTMLInputElement;
+  const elShowNotes = makeInput("checkbox") as HTMLInputElement;
+  elShowNotes.checked = !!(data.properties?.show_notes);
 
-  // Contact section
-  elTelHome = makeInput("tel");
-  elTelWork = makeInput("tel");
-  elTelMobile = makeInput("tel");
-  elEmail = makeInput("email");
+  // Contact
+  const selfContact = data.contacts?.self;
+  const tels = selfContact?.tel ?? [];
+  const elTelHome = makeInput("tel");
+  elTelHome.value = tels.find((t) => t.type === "home")?.value ?? "";
+  const elTelWork = makeInput("tel");
+  elTelWork.value = tels.find((t) => t.type === "work")?.value ?? "";
+  const elTelMobile = makeInput("tel");
+  elTelMobile.value = tels.find((t) => t.type === "cell")?.value ?? "";
+  const elEmail = makeInput("email");
+  elEmail.value = (selfContact?.email ?? [])[0]?.value ?? "";
 
-  // Build DOM into scrollable body
+  // Build name helper
+  const buildName = () => ({
+    given: elGivenNames.value.split(/\s+/).filter(Boolean),
+    family: elSurname.value,
+    prefix: elTitle.value,
+  });
+
+  // Patch helpers
+  const patchDirect = async (patchBody: Record<string, unknown>) => {
+    if (!currentId) return;
+    try {
+      await callbacks.api(`/api/individuals/${currentId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patchBody),
+      });
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Panel patch failed:", err);
+    }
+  };
+
+  const patchProperty = async (key: string, value: unknown) => {
+    if (!currentId) return;
+    try {
+      const d = await callbacks.api<IndividualData>(`/api/individuals/${currentId}`);
+      const merged = { ...(d.properties ?? {}), [key]: value };
+      await callbacks.api(`/api/individuals/${currentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ properties: merged }),
+      });
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Panel property patch failed:", err);
+    }
+  };
+
+  const patchContact = async () => {
+    if (!currentId) return;
+    try {
+      const tel: { value: string; type: string }[] = [];
+      if (elTelHome.value) tel.push({ value: elTelHome.value, type: "home" });
+      if (elTelWork.value) tel.push({ value: elTelWork.value, type: "work" });
+      if (elTelMobile.value) tel.push({ value: elTelMobile.value, type: "cell" });
+      const email: { value: string; type: string }[] = [];
+      if (elEmail.value) email.push({ value: elEmail.value, type: "home" });
+      await callbacks.api(`/api/individuals/${currentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ contacts: { self: { tel, email } } }),
+      });
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Panel contact patch failed:", err);
+    }
+  };
+
+  const handleDateOfDeath = async (dateValue: string) => {
+    if (!currentId) return;
+    try {
+      const d = await callbacks.api<IndividualData>(`/api/individuals/${currentId}`);
+      const props: Record<string, unknown> = { ...(d.properties ?? {}), date_of_death: dateValue };
+      if (dateValue && !DEAD_STATUSES.has((d.properties?.death_status as string) ?? "")) {
+        props.death_status = "dead";
+      }
+      await callbacks.api(`/api/individuals/${currentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ properties: props }),
+      });
+      if (dateValue) {
+        await callbacks.api(`/api/individuals/${currentId}/events`, {
+          method: "POST",
+          body: JSON.stringify({ type: "death", date: dateValue }),
+        });
+      }
+      elMortality.value = (props.death_status as string) ?? "alive";
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Panel date-of-death patch failed:", err);
+    }
+  };
+
+  // Wire immediate events
+  elSex.addEventListener("change", () => { callbacks.onBeforeMutation(); patchDirect({ biological_sex: elSex.value }); });
+  elMortality.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("death_status", elMortality.value); });
+  elAffection.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("affection_status", elAffection.value); });
+  elFertility.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("fertility_status", elFertility.value); });
+  elProband.addEventListener("input", () => { callbacks.onBeforeMutation(); patchDirect({ proband: parseFloat(elProband.value) }); });
+  elShowNotes.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("show_notes", elShowNotes.checked); });
+
+  // Wire debounced events
+  const wireDebounced = (el: HTMLInputElement | HTMLTextAreaElement, fn: () => void) =>
+    debouncer.wireDebouncedWithUndo(el, fn, callbacks.onBeforeMutation);
+
+  wireDebounced(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }));
+  wireDebounced(elGivenNames, () => patchDirect({ name: buildName() }));
+  wireDebounced(elSurname, () => patchDirect({ name: buildName() }));
+  wireDebounced(elTitle, () => patchDirect({ name: buildName() }));
+  wireDebounced(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value));
+  wireDebounced(elProbandText, () => patchDirect({ proband_text: elProbandText.value }));
+  wireDebounced(elGeneration, () => {
+    const val = elGeneration.value === "" ? null : parseInt(elGeneration.value, 10);
+    patchDirect({ generation: val });
+  });
+  wireDebounced(elDob, () => patchProperty("date_of_birth", elDob.value));
+  wireDebounced(elDod, () => handleDateOfDeath(elDod.value));
+  wireDebounced(elNotes, () => patchDirect({ notes: elNotes.value }));
+  wireDebounced(elTelHome, () => patchContact());
+  wireDebounced(elTelWork, () => patchContact());
+  wireDebounced(elTelMobile, () => patchContact());
+  wireDebounced(elEmail, () => patchContact());
+
+  // Events section
+  const eventEditor = buildEventEditor({
+    entityType: "individual",
+    entityId: data.id,
+    events: data.events ?? [],
+    eventTypes: INDIVIDUAL_EVENT_TYPES,
+    callbacks,
+  });
+
+  // Assemble DOM
   body.append(
     heading("Identity"),
     makeField("Display name", elDisplayName),
@@ -285,261 +382,7 @@ export function initPanel(cbs: PanelCallbacks): void {
     makeField("Daytime telephone", elTelWork),
     makeField("Mobile", elTelMobile),
     makeField("Email", elEmail),
+
+    eventEditor,
   );
-
-  // Wire events — immediate for dropdowns/checkbox
-  elSex.addEventListener("change", () => { callbacks.onBeforeMutation(); patchDirect({ biological_sex: elSex.value }); });
-  elMortality.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("death_status", elMortality.value); });
-  elAffection.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("affection_status", elAffection.value); });
-  elFertility.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("fertility_status", elFertility.value); });
-  elProband.addEventListener("input", () => { callbacks.onBeforeMutation(); patchDirect({ proband: parseFloat(elProband.value) }); });
-  elShowNotes.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("show_notes", elShowNotes.checked); });
-
-  // Wire events — debounced for text inputs (onBeforeMutation fires once when typing starts)
-  wireDebouncedWithUndo(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }));
-  wireDebouncedWithUndo(elGivenNames, () => patchDirect({ name: buildName() }));
-  wireDebouncedWithUndo(elSurname, () => patchDirect({ name: buildName() }));
-  wireDebouncedWithUndo(elTitle, () => patchDirect({ name: buildName() }));
-  wireDebouncedWithUndo(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value));
-  wireDebouncedWithUndo(elProbandText, () => patchDirect({ proband_text: elProbandText.value }));
-  wireDebouncedWithUndo(elGeneration, () => {
-    const val = elGeneration.value === "" ? null : parseInt(elGeneration.value, 10);
-    patchDirect({ generation: val });
-  });
-  wireDebouncedWithUndo(elDob, () => patchProperty("date_of_birth", elDob.value));
-  wireDebouncedWithUndo(elDod, () => handleDateOfDeath(elDod.value));
-  wireDebouncedWithUndo(elNotes, () => patchDirect({ notes: elNotes.value }));
-  wireDebouncedWithUndo(elTelHome, () => patchContact());
-  wireDebouncedWithUndo(elTelWork, () => patchContact());
-  wireDebouncedWithUndo(elTelMobile, () => patchContact());
-  wireDebouncedWithUndo(elEmail, () => patchContact());
-}
-
-// --- Open / Close ---
-
-export async function openPanel(individualId: string): Promise<void> {
-  // If already open for same individual, just refresh
-  const wasHidden = sidebar.classList.contains("hidden");
-  currentId = individualId;
-  sidebar.classList.remove("hidden");
-
-  // Reset position only when first opening (not when switching individuals)
-  if (wasHidden) {
-    sidebar.style.right = "24px";
-    sidebar.style.top = "80px";
-    sidebar.style.left = "auto";
-  }
-
-  // Fetch current data
-  const data = await callbacks.api<IndividualData>(`/api/individuals/${individualId}`);
-  populate(data);
-}
-
-export function closePanel(): void {
-  currentId = null;
-  sidebar.classList.add("hidden");
-  clearDebounces();
-}
-
-export function isPanelOpen(): boolean {
-  return currentId !== null;
-}
-
-// --- Populate fields from API data ---
-
-function populate(data: IndividualData): void {
-  elDisplayName.value = data.display_name ?? "";
-  elGivenNames.value = (data.name?.given ?? []).join(" ");
-  elSurname.value = data.name?.family ?? "";
-  elTitle.value = data.name?.prefix ?? "";
-  elSurnameAtBirth.value = (data.properties?.surname_at_birth as string) ?? "";
-
-  elSex.value = data.biological_sex ?? "unknown";
-  elMortality.value = (data.properties?.death_status as string) ?? "alive";
-  elAffection.value = (data.properties?.affection_status as string) ?? "unknown";
-  elFertility.value = (data.properties?.fertility_status as string) ?? "unknown";
-  elProband.value = String(data.proband ?? 0);
-  elProbandText.value = data.proband_text ?? "";
-  elGeneration.value = data.generation != null ? String(data.generation) : "";
-
-  elDob.value = (data.properties?.date_of_birth as string) ?? "";
-  elDod.value = (data.properties?.date_of_death as string) ?? "";
-
-  elNotes.value = data.notes ?? "";
-  elShowNotes.checked = !!(data.properties?.show_notes);
-
-  // Reset preview mode
-  notesPreviewMode = false;
-  elNotes.style.display = "";
-  elNotesPreview.style.display = "none";
-  elNotesToggle.textContent = "Preview";
-
-  // Contacts
-  const selfContact = data.contacts?.self;
-  const tels = selfContact?.tel ?? [];
-  elTelHome.value = tels.find((t) => t.type === "home")?.value ?? "";
-  elTelWork.value = tels.find((t) => t.type === "work")?.value ?? "";
-  elTelMobile.value = tels.find((t) => t.type === "cell")?.value ?? "";
-  elEmail.value = (selfContact?.email ?? [])[0]?.value ?? "";
-}
-
-// --- Patch helpers ---
-
-async function patchDirect(body: Record<string, unknown>): Promise<void> {
-  if (!currentId) return;
-  try {
-    await callbacks.api(`/api/individuals/${currentId}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-    await callbacks.onUpdate();
-  } catch (err) {
-    console.error("Panel patch failed:", err);
-  }
-}
-
-async function patchProperty(key: string, value: unknown): Promise<void> {
-  if (!currentId) return;
-  try {
-    // Fetch current to get existing properties
-    const data = await callbacks.api<IndividualData>(`/api/individuals/${currentId}`);
-    const merged = { ...(data.properties ?? {}), [key]: value };
-    await callbacks.api(`/api/individuals/${currentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ properties: merged }),
-    });
-    await callbacks.onUpdate();
-  } catch (err) {
-    console.error("Panel property patch failed:", err);
-  }
-}
-
-async function patchContact(): Promise<void> {
-  if (!currentId) return;
-  try {
-    const tel: { value: string; type: string }[] = [];
-    if (elTelHome.value) tel.push({ value: elTelHome.value, type: "home" });
-    if (elTelWork.value) tel.push({ value: elTelWork.value, type: "work" });
-    if (elTelMobile.value) tel.push({ value: elTelMobile.value, type: "cell" });
-
-    const email: { value: string; type: string }[] = [];
-    if (elEmail.value) email.push({ value: elEmail.value, type: "home" });
-
-    const contacts = {
-      self: { tel, email },
-    };
-
-    await callbacks.api(`/api/individuals/${currentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ contacts }),
-    });
-    await callbacks.onUpdate();
-  } catch (err) {
-    console.error("Panel contact patch failed:", err);
-  }
-}
-
-const DEAD_STATUSES = new Set([
-  "dead", "suicide_confirmed", "suicide_unconfirmed", "spontaneous_abortion",
-  "therapeutic_abortion", "neonatal_death", "stillborn", "lived_one_day",
-]);
-
-async function handleDateOfDeath(dateValue: string): Promise<void> {
-  if (!currentId) return;
-  try {
-    // Fetch current individual to read existing properties
-    const data = await callbacks.api<IndividualData>(`/api/individuals/${currentId}`);
-    const props: Record<string, unknown> = { ...(data.properties ?? {}), date_of_death: dateValue };
-
-    // If a date is being set and mortality is not already a death-related status, set to "dead"
-    if (dateValue && !DEAD_STATUSES.has((data.properties?.death_status as string) ?? "")) {
-      props.death_status = "dead";
-    }
-
-    await callbacks.api(`/api/individuals/${currentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ properties: props }),
-    });
-
-    // Add a death event if a date is being set
-    if (dateValue) {
-      await callbacks.api(`/api/individuals/${currentId}/events`, {
-        method: "POST",
-        body: JSON.stringify({ type: "death", date: dateValue }),
-      });
-    }
-
-    // Update UI to reflect the mortality dropdown change
-    elMortality.value = (props.death_status as string) ?? "alive";
-
-    await callbacks.onUpdate();
-  } catch (err) {
-    console.error("Panel date-of-death patch failed:", err);
-  }
-}
-
-function buildName(): Record<string, unknown> {
-  return {
-    given: elGivenNames.value.split(/\s+/).filter(Boolean),
-    family: elSurname.value,
-    prefix: elTitle.value,
-  };
-}
-
-// --- Debounce ---
-
-let debounceCounter = 0;
-
-/** Debounced input handler that fires onBeforeMutation once when a new edit session starts. */
-function wireDebouncedWithUndo(el: HTMLInputElement | HTMLTextAreaElement, fn: () => void): void {
-  const key = `debounce-undo-${debounceCounter++}`;
-  let undoFired = false;
-  const handler = () => {
-    if (!undoFired) {
-      callbacks.onBeforeMutation();
-      undoFired = true;
-    }
-    const existing = debounceTimers.get(key);
-    if (existing) clearTimeout(existing);
-    debounceTimers.set(key, setTimeout(() => {
-      fn();
-      undoFired = false;
-    }, 500));
-  };
-  el.addEventListener("input", handler);
-}
-
-function clearDebounces(): void {
-  for (const t of debounceTimers.values()) clearTimeout(t);
-  debounceTimers.clear();
-}
-
-// --- Drag logic ---
-
-function initDrag(handle: HTMLElement): void {
-  let dragging = false;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  handle.addEventListener("pointerdown", (e) => {
-    dragging = true;
-    const rect = sidebar.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    handle.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-
-  handle.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const x = e.clientX - offsetX;
-    const y = e.clientY - offsetY;
-    sidebar.style.left = `${x}px`;
-    sidebar.style.top = `${y}px`;
-    sidebar.style.right = "auto";
-  });
-
-  handle.addEventListener("pointerup", () => {
-    dragging = false;
-  });
 }

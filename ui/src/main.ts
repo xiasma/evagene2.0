@@ -2,6 +2,10 @@ import "./style.css";
 import { recognise, centroid, Point, Shape } from "./recognise";
 import { drawIndividual, SymbolSpec, SymbolColors } from "./symbols";
 import { initPanel, openPanel, closePanel } from "./panel";
+import { initPedigreePanel, openPedigreePanel, closePedigreePanel } from "./panel-pedigree";
+import { initRelationshipPanel, openRelationshipPanel, closeRelationshipPanel } from "./panel-relationship";
+import { initEggPanel, openEggPanel, closeEggPanel } from "./panel-egg";
+import { PanelCallbacks } from "./panel-utils";
 import { cssVar, toggleTheme, fontSettings, updateFontSettings, getCanvasFontWithSize } from "./theme";
 
 // --- Types ---
@@ -23,6 +27,7 @@ interface PlacedRelationship {
   id: string;
   members: string[];
   properties: Record<string, unknown>;
+  events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
 }
 
 interface PlacedEgg {
@@ -73,6 +78,7 @@ app.innerHTML = `
           </div>
         </div>
       </div>
+      <button id="btn-pedigree" title="Edit pedigree properties">Pedigree</button>
       <button id="btn-theme" title="Toggle theme">Theme</button>
       <span class="separator"></span>
       <button id="btn-zoom-in" title="Zoom in">+</button>
@@ -113,6 +119,7 @@ const btnGrid = document.getElementById("btn-grid") as HTMLButtonElement;
 const btnFind = document.getElementById("btn-find") as HTMLButtonElement;
 const btnAddNote = document.getElementById("btn-add-note") as HTMLButtonElement;
 const btnToggleNotes = document.getElementById("btn-toggle-notes") as HTMLButtonElement;
+const btnPedigree = document.getElementById("btn-pedigree") as HTMLButtonElement;
 const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
 const fontPopup = document.getElementById("font-popup") as HTMLDivElement;
 const btnTheme = document.getElementById("btn-theme") as HTMLButtonElement;
@@ -167,6 +174,18 @@ let selectedIds: Set<string> = new Set();
 let selectedIndividualId: string | null = null;
 let pointerMoved = false;
 let clickHitId: string | null = null;
+
+// Panel orchestration
+type PanelTarget =
+  | { type: "individual"; id: string }
+  | { type: "relationship"; id: string }
+  | { type: "egg"; id: string }
+  | { type: "pedigree" }
+  | null;
+
+let activePanelTarget: PanelTarget = null;
+let clickHitRelId: string | null = null;
+let clickHitEggId: string | null = null;
 
 // Connection drawing state
 let connecting = false;
@@ -326,14 +345,15 @@ async function init() {
 
 init();
 
-// --- Properties panel ---
+// --- Properties panels ---
 
-initPanel({
+const panelCallbacks: PanelCallbacks = {
   onUpdate: async () => {
     await refreshState();
     render();
   },
   onClose: () => {
+    activePanelTarget = null;
     selectedIndividualId = null;
     render();
   },
@@ -341,7 +361,44 @@ initPanel({
   onBeforeMutation: () => {
     pushUndo(captureSnapshot());
   },
-});
+};
+
+initPanel(panelCallbacks);
+initPedigreePanel(panelCallbacks);
+initRelationshipPanel(panelCallbacks);
+initEggPanel(panelCallbacks);
+
+function closeActivePanel(): void {
+  if (!activePanelTarget) return;
+  switch (activePanelTarget.type) {
+    case "individual": closePanel(); break;
+    case "relationship": closeRelationshipPanel(); break;
+    case "egg": closeEggPanel(); break;
+    case "pedigree": closePedigreePanel(); break;
+  }
+  activePanelTarget = null;
+}
+
+async function openPanelFor(target: PanelTarget): Promise<void> {
+  closeActivePanel();
+  activePanelTarget = target;
+  if (!target) return;
+  switch (target.type) {
+    case "individual":
+      selectedIndividualId = target.id;
+      await openPanel(target.id);
+      break;
+    case "relationship":
+      await openRelationshipPanel(target.id);
+      break;
+    case "egg":
+      await openEggPanel(target.id);
+      break;
+    case "pedigree":
+      if (pedigreeId) await openPedigreePanel(pedigreeId);
+      break;
+  }
+}
 
 // --- Side hit-test for connection drawing ---
 
@@ -453,6 +510,49 @@ function hitParentalLine(pos: Point): PlacedRelationship | null {
     const d2 = pointToSegmentDist(pos.x, pos.y, origin.x, midY, childTopX, midY);
     const d3 = pointToSegmentDist(pos.x, pos.y, childTopX, midY, childTopX, childTopY);
     if (Math.min(d1, d2, d3) <= PARENTAL_TOLERANCE) return rel;
+  }
+  return null;
+}
+
+/** Like hitParentalLine but returns the specific egg ID instead of the relationship. */
+function hitParentalLineEgg(pos: Point): PlacedEgg | null {
+  const half = SHAPE_SIZE / 2;
+  for (const egg of eggs) {
+    if (!egg.relationship_id || !egg.individual_id) continue;
+    const rel = relationships.find((r) => r.id === egg.relationship_id);
+    if (!rel) continue;
+
+    let origin: { x: number; y: number } | null = null;
+    if (rel.members.length >= 2) {
+      origin = getRelationshipMidpoint(rel);
+    } else if (rel.members.length === 1) {
+      const parent = individuals.find((i) => i.id === rel.members[0]);
+      if (parent && parent.x != null && parent.y != null) {
+        origin = { x: parent.x, y: parent.y + half };
+      }
+    } else if (rel.members.length === 0) {
+      const siblingEggs = eggs.filter((e) => e.relationship_id === rel.id && e.individual_id);
+      const siblings = siblingEggs
+        .map((e) => individuals.find((i) => i.id === e.individual_id))
+        .filter((i): i is PlacedIndividual => i != null && i.x != null && i.y != null);
+      if (siblings.length >= 2) {
+        const avgX = siblings.reduce((s, c) => s + c.x, 0) / siblings.length;
+        const minY = Math.min(...siblings.map((c) => c.y - half));
+        origin = { x: avgX, y: minY - SIBLING_BAR_HEIGHT * 1.5 };
+      }
+    }
+    if (!origin) continue;
+
+    const child = individuals.find((i) => i.id === egg.individual_id);
+    if (!child || child.x == null || child.y == null) continue;
+    const childTopX = child.x;
+    const childTopY = child.y - half;
+    const midY = (origin.y + childTopY) / 2;
+
+    const d1 = pointToSegmentDist(pos.x, pos.y, origin.x, origin.y, origin.x, midY);
+    const d2 = pointToSegmentDist(pos.x, pos.y, origin.x, midY, childTopX, midY);
+    const d3 = pointToSegmentDist(pos.x, pos.y, childTopX, midY, childTopX, childTopY);
+    if (Math.min(d1, d2, d3) <= PARENTAL_TOLERANCE) return egg;
   }
   return null;
 }
@@ -723,18 +823,21 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
-  // Priority 3: Hit existing parental line → add sibling to same relationship
+  // Priority 3: Hit existing parental line → add sibling or click to open egg panel
   const parentalHit = hitParentalLine(pos);
   if (parentalHit) {
+    const eggHit = hitParentalLineEgg(pos);
+    clickHitEggId = eggHit ? eggHit.id : null;
     drawingParentalLine = true;
     parentalSource = { type: "relationship", relId: parentalHit.id };
     beginStroke(pos);
     return;
   }
 
-  // Priority 4: Hit relationship line → parental line from relationship
+  // Priority 4: Hit relationship line → parental line or click to open relationship panel
   const relHit = hitRelationshipLine(pos);
   if (relHit) {
+    clickHitRelId = relHit.id;
     drawingParentalLine = true;
     parentalSource = { type: "relationship", relId: relHit.id };
     beginStroke(pos);
@@ -804,7 +907,7 @@ canvas.addEventListener("pointerdown", (e) => {
     selectedIds = new Set();
     selectedIndividualId = null;
     selectedNoteId = null;
-    closePanel();
+    closeActivePanel();
     render();
     beginStroke(pos);
   }
@@ -918,15 +1021,14 @@ canvas.addEventListener("pointerup", () => {
 
   // Single-click (no drag) on an individual → open properties panel
   if (clickHitId && !pointerMoved) {
-
-    selectedIndividualId = clickHitId;
+    const id = clickHitId;
     selectedIds = new Set();
     selectedNoteId = null;
     dragging = false;
     groupDragOffsets = new Map();
     drawing = false;
     render();
-    openPanel(clickHitId);
+    openPanelFor({ type: "individual", id });
     clickHitId = null;
     return;
   }
@@ -962,6 +1064,29 @@ canvas.addEventListener("pointerup", () => {
     const source = parentalSource;
     drawingParentalLine = false;
     parentalSource = null;
+
+    // Single-click (no drag) on parental line → open egg panel
+    if (!pointerMoved && clickHitEggId) {
+      const eggId = clickHitEggId;
+      clickHitEggId = null;
+      clickHitRelId = null;
+      render();
+      openPanelFor({ type: "egg", id: eggId });
+      return;
+    }
+
+    // Single-click (no drag) on relationship line → open relationship panel
+    if (!pointerMoved && clickHitRelId) {
+      const relId = clickHitRelId;
+      clickHitRelId = null;
+      clickHitEggId = null;
+      render();
+      openPanelFor({ type: "relationship", id: relId });
+      return;
+    }
+
+    clickHitRelId = null;
+    clickHitEggId = null;
 
     if (points.length > 0 && source) {
       const endpoint = points[points.length - 1];
@@ -1067,11 +1192,16 @@ canvas.addEventListener("pointerup", () => {
 
         selectedIds = new Set(enclosed.map((ind) => ind.id));
         selectedIndividualId = null;
-        closePanel();
+        closeActivePanel();
         render();
         return;
       }
     }
+  }
+
+  // Check for diagonal stroke through a relationship line → separation/divorce
+  if (points.length >= 2 && tryDiagonalStrokeRelationship(points)) {
+    return;
   }
 
   // Check for diagonal stroke through an individual → death/suicide
@@ -1303,7 +1433,7 @@ async function handleParentalLineFromIndividual(
         `/api/pedigrees/${pedigreeId}/relationships/${newRel.id}`,
         { method: "POST" },
       );
-      rel = { id: newRel.id, members: [parentId], properties: {} };
+      rel = { id: newRel.id, members: [parentId], properties: {}, events: [] };
     }
 
     await api(`/api/relationships/${rel!.id}/offspring`, {
@@ -1540,7 +1670,7 @@ async function deleteIndividuals(ids: string[]) {
 
     selectedIds = new Set();
     selectedIndividualId = null;
-    closePanel();
+    closeActivePanel();
     await refreshState();
     render();
   } catch (err) {
@@ -2028,6 +2158,81 @@ async function handleSetDeathStatus(indId: string, status: string) {
   }
 }
 
+// --- Diagonal stroke through relationship line → separation / divorce ---
+
+function tryDiagonalStrokeRelationship(pts: Point[]): boolean {
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const dx = last.x - first.x;
+  const dy = last.y - first.y;
+  const len = Math.hypot(dx, dy);
+
+  // Must be long enough and fairly straight
+  if (len < SHAPE_SIZE * 0.6) return false;
+
+  let maxDev = 0;
+  for (const pt of pts) {
+    const dev = Math.abs((last.y - first.y) * pt.x - (last.x - first.x) * pt.y + last.x * first.y - last.y * first.x) / len;
+    if (dev > maxDev) maxDev = dev;
+  }
+  if (maxDev > SHAPE_SIZE * 0.4) return false;
+
+  // Must be diagonal (not horizontal or vertical)
+  const angle = Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx)));
+  if (angle < 0.35 || angle > 1.22) return false;
+
+  // Check if the stroke crosses a relationship line
+  const half = SHAPE_SIZE / 2;
+  let hitRel: PlacedRelationship | null = null;
+  for (const rel of relationships) {
+    if (rel.members.length < 2) continue;
+    const a = individuals.find((i) => i.id === rel.members[0]);
+    const b = individuals.find((i) => i.id === rel.members[1]);
+    if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null) continue;
+    const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+    const relX1 = left.x + half, relY1 = left.y;
+    const relX2 = right.x - half, relY2 = right.y;
+    // Check midpoint of diagonal stroke is near the relationship line
+    const midX = (first.x + last.x) / 2;
+    const midY = (first.y + last.y) / 2;
+    const dist = pointToSegmentDist(midX, midY, relX1, relY1, relX2, relY2);
+    if (dist <= PARENTAL_TOLERANCE) {
+      hitRel = rel;
+      break;
+    }
+  }
+  if (!hitRel) return false;
+
+  // Check existing events to determine if already separated
+  const hasSeparation = hitRel.events?.some(
+    (ev) => ev.type === "separation" || ev.properties?.status === "separation"
+  ) ?? false;
+
+  render();
+  pushUndo(captureSnapshot());
+
+  if (hasSeparation) {
+    handleRelationshipDiagonal(hitRel.id, "divorce");
+  } else {
+    handleRelationshipDiagonal(hitRel.id, "separation");
+  }
+  return true;
+}
+
+async function handleRelationshipDiagonal(relId: string, status: string) {
+  try {
+    const eventType = status === "divorce" ? "divorce" : "separation";
+    await api(`/api/relationships/${relId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ type: eventType, properties: { status } }),
+    });
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to add relationship event:", err);
+  }
+}
+
 // --- Scribble delete helpers ---
 
 const SCRIBBLE_MIN_PASSES = 3;
@@ -2322,6 +2527,29 @@ function render() {
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // Draw separation / divorce slashes on the relationship line
+    const hasSep = rel.events?.some((ev) => ev.type === "separation" || ev.properties?.status === "separation");
+    const hasDiv = rel.events?.some((ev) => ev.type === "divorce" || ev.properties?.status === "divorce");
+    if (hasSep || hasDiv) {
+      const midX = (left.x + half + right.x - half) / 2;
+      const midY = (left.y + right.y) / 2;
+      const slashH = SHAPE_SIZE * 0.35;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      // First slash (separation)
+      ctx.beginPath();
+      ctx.moveTo(midX - 4, midY - slashH);
+      ctx.lineTo(midX + 4, midY + slashH);
+      ctx.stroke();
+      // Second slash (divorce)
+      if (hasDiv) {
+        ctx.beginPath();
+        ctx.moveTo(midX - 4 + 6, midY - slashH);
+        ctx.lineTo(midX + 4 + 6, midY + slashH);
+        ctx.stroke();
+      }
+    }
   }
 
   // Draw parental lines (egg connections)
@@ -2644,6 +2872,10 @@ btnToggleNotes.addEventListener("click", () => {
   render();
 });
 btnToggleNotes.classList.toggle("active", showAllFloatingNotes);
+
+btnPedigree.addEventListener("click", () => {
+  openPanelFor({ type: "pedigree" });
+});
 
 btnTheme.addEventListener("click", () => {
   toggleTheme();
