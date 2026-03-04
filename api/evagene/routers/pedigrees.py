@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from ..gedcom import parse_gedcom, serialize_gedcom
-from ..models import Event, EventCreate, GedcomImportBody, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate
+from ..models import Event, EventCreate, GedcomImportBody, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate, XegImportBody
+from ..xeg import parse_xeg
 from ..store import store
 
 router = APIRouter(prefix="/api/pedigrees", tags=["pedigrees"])
@@ -134,6 +135,14 @@ def import_gedcom(pedigree_id: uuid.UUID, body: GedcomImportBody):
     if store.get_pedigree(pedigree_id) is None:
         raise HTTPException(404, "Pedigree not found")
     individuals, relationships, eggs = parse_gedcom(body.content)
+    store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
+
+
+@router.post("/{pedigree_id}/import/xeg", status_code=204)
+def import_xeg(pedigree_id: uuid.UUID, body: XegImportBody):
+    if store.get_pedigree(pedigree_id) is None:
+        raise HTTPException(404, "Pedigree not found")
+    individuals, relationships, eggs = parse_xeg(body.content)
     store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
 
 

@@ -61,6 +61,8 @@ api/evagene/
   main.py       App factory, router mounting
   models.py     Pydantic models + enums (~100 models/schemas)
   store.py      In-memory CRUD store with event indexing
+  gedcom.py     GEDCOM 5.5.1 parser and serializer
+  xeg.py        Evagene v1 .xeg XML parser
   routers/
     individuals.py
     relationships.py
@@ -82,6 +84,9 @@ All mutations are synchronous dict operations. Cascade logic ensures that deleti
 - **Update** (PATCH) — accepts a `*Update` schema with all-optional fields, merges into existing entity
 - **Delete** (DELETE) — removes from store and all pedigree references, returns 204
 - **Pedigree detail** (GET `/api/pedigrees/{id}`) — resolves all UUID references into full entity objects, returns `PedigreeDetail`
+- **GEDCOM export** (GET `/api/pedigrees/{id}/export.ged`) — serializes the pedigree to GEDCOM 5.5.1 text
+- **GEDCOM import** (POST `/api/pedigrees/{id}/import/gedcom`) — parses GEDCOM text and replaces the pedigree's entities
+- **XEG import** (POST `/api/pedigrees/{id}/import/xeg`) — parses Evagene v1 .xeg XML and replaces the pedigree's entities
 
 ## Frontend architecture
 
@@ -105,11 +110,12 @@ ui/src/
 
 ### Rendering pipeline
 
-`render()` clears the canvas and draws three layers:
+`render()` clears the canvas, applies the zoom/pan transform (`translate` + `scale`), then draws three layers:
 
-1. **Relationship lines** — horizontal lines between coupled individuals
-2. **Parental lines** — orthogonal paths from relationship midpoints (or single parents) down to children, via eggs
-3. **Individual symbols** — calls `drawIndividual()` from `symbols.ts` which renders 4 sub-layers:
+1. **Grid** — visible-area grid lines in world coordinates (when snap-to-grid is enabled)
+2. **Relationship lines** — horizontal lines between coupled individuals
+3. **Parental lines** — orthogonal paths from relationship midpoints (or single parents) down to children, via eggs
+4. **Individual symbols** — calls `drawIndividual()` from `symbols.ts` which renders 4 sub-layers:
    - Base shape (circle/square/diamond/triangle, with dashed variants)
    - Affection overlay (fill, clip, inner circle, text markers)
    - Mortality overlay (diagonal lines, text labels)
@@ -138,6 +144,29 @@ Pointer events on the canvas follow a priority chain:
 6. **Hit nothing** → freehand drawing (shape recognition or lasso selection)
 
 A `pointerMoved` flag distinguishes clicks from drags: if the pointer doesn't move between down and up, it's a click that opens the properties panel.
+
+### Zoom and pan
+
+The canvas supports zoom and pan via a `zoomScale` / `panX` / `panY` transform applied in `render()`:
+
+- **Scroll wheel** — zooms towards the cursor position
+- **Pinch-to-zoom** — two-finger touch gesture zooms towards the midpoint
+- **Middle-click or Ctrl+click drag** — pans the canvas
+- **Toolbar buttons** — zoom in (+), zoom out (−), reset (1:1)
+
+All pointer coordinates are converted from screen space to world space via `screenToWorld()`, so all hit-testing and drawing logic works in world coordinates regardless of zoom level.
+
+### File I/O
+
+The toolbar provides four file operations:
+
+- **Save** — downloads the full pedigree detail as a JSON file (client-side)
+- **Load** — reads a JSON file, pushes an undo snapshot, then restores the pedigree via the API
+- **Export .ged** — fetches GEDCOM 5.5.1 text from `GET /api/pedigrees/{id}/export.ged` and downloads it
+- **Import .ged** — reads a GEDCOM file, pushes an undo snapshot, then posts it to `POST /api/pedigrees/{id}/import/gedcom`
+- **Import .xeg** — reads an Evagene v1 XML file, pushes an undo snapshot, then posts it to `POST /api/pedigrees/{id}/import/xeg`
+
+GEDCOM round-trip fidelity is maintained through custom underscore-prefixed tags (`_X`, `_Y`, `_PROBAND`, `_AFFECTION`, `_FERTILITY`, `_DEATH_STATUS`, `_TWIN`, `_MONOZYGOTIC`) that preserve Evagene-specific data.
 
 ### Properties panel
 

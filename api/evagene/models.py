@@ -350,3 +350,7 @@ class PedigreeRestoreBody(BaseModel):
 
 class GedcomImportBody(BaseModel):
     content: str
+
+
+class XegImportBody(BaseModel):
+    content: str

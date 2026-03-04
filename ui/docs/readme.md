@@ -52,6 +52,21 @@ Draw from the **top** of one child to the **top** of another child (both must sh
 - **Drag** an individual to reposition it
 - **Lasso select** by drawing a closed loop around multiple individuals, then drag the group
 
+### Zoom and pan
+
+- **Scroll wheel** — zoom in/out towards cursor
+- **Pinch** — two-finger pinch-to-zoom on touch devices
+- **Middle-click drag** or **Ctrl+click drag** — pan the canvas
+- **Toolbar buttons** — `+` (zoom in), `−` (zoom out), `1:1` (reset to default)
+
+### Save and load
+
+- **Save** — downloads the current pedigree as a JSON file
+- **Load** — loads a previously saved JSON file (supports undo)
+- **Export .ged** — downloads the pedigree in GEDCOM 5.5.1 format for use with genealogy software
+- **Import .ged** — loads a GEDCOM file into the current pedigree (supports undo)
+- **Import .xeg** — loads an Evagene v1 .xeg file into the current pedigree (supports undo)
+
 ### Properties panel
 
 Click an individual to open a floating, draggable editor with sections:

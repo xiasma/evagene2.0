@@ -63,6 +63,10 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 | DELETE | `/api/pedigrees/{id}/relationships/{relationship_id}` | Remove relationship |
 | POST | `/api/pedigrees/{id}/eggs/{egg_id}` | Add egg to pedigree |
 | DELETE | `/api/pedigrees/{id}/eggs/{egg_id}` | Remove egg |
+| PUT | `/api/pedigrees/{id}/restore` | Restore pedigree snapshot (undo/load) |
+| GET | `/api/pedigrees/{id}/export.ged` | Export pedigree as GEDCOM 5.5.1 file |
+| POST | `/api/pedigrees/{id}/import/gedcom` | Import GEDCOM 5.5.1 text into pedigree |
+| POST | `/api/pedigrees/{id}/import/xeg` | Import Evagene v1 .xeg XML into pedigree |
 | POST | `/api/pedigrees/{id}/events` | Add an event |
 
 ### Events (`/api/events`)

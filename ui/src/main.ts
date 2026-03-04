@@ -83,10 +83,12 @@ app.innerHTML = `
       <button id="btn-load" title="Load JSON">Load</button>
       <button id="btn-export-ged" title="Export GEDCOM">Export .ged</button>
       <button id="btn-import-ged" title="Import GEDCOM">Import .ged</button>
+      <button id="btn-import-xeg" title="Import XEG (Evagene v1)">Import .xeg</button>
     </div>
   </div>
   <input type="file" id="file-json" accept=".json" style="display:none">
   <input type="file" id="file-ged" accept=".ged,.gedcom" style="display:none">
+  <input type="file" id="file-xeg" accept=".xeg" style="display:none">
   <canvas id="canvas"></canvas>
   <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
@@ -121,8 +123,10 @@ const btnSave = document.getElementById("btn-save") as HTMLButtonElement;
 const btnLoad = document.getElementById("btn-load") as HTMLButtonElement;
 const btnExportGed = document.getElementById("btn-export-ged") as HTMLButtonElement;
 const btnImportGed = document.getElementById("btn-import-ged") as HTMLButtonElement;
+const btnImportXeg = document.getElementById("btn-import-xeg") as HTMLButtonElement;
 const fileJsonInput = document.getElementById("file-json") as HTMLInputElement;
 const fileGedInput = document.getElementById("file-ged") as HTMLInputElement;
+const fileXegInput = document.getElementById("file-xeg") as HTMLInputElement;
 
 // Find bar elements
 const findBar = document.getElementById("find-bar") as HTMLDivElement;
@@ -1216,6 +1220,42 @@ async function refreshState() {
   eggs = detail.eggs ?? [];
   // Load floating notes from pedigree properties
   floatingNotes = (detail.properties?.floating_notes as FloatingNote[]) ?? [];
+}
+
+/** Assign grid positions to individuals that have no x/y, then PATCH them. */
+async function autoLayoutUnpositioned() {
+  const unpositioned = individuals.filter((i) => i.x == null || i.y == null);
+  if (unpositioned.length === 0) return;
+
+  // Find the bounding box of already-positioned individuals
+  const positioned = individuals.filter((i) => i.x != null && i.y != null);
+  let startX = GRID_SIZE * 2;
+  let startY = GRID_SIZE * 2;
+  if (positioned.length > 0) {
+    const maxY = Math.max(...positioned.map((i) => i.y));
+    startY = maxY + GRID_SIZE * 3;
+    startX = Math.min(...positioned.map((i) => i.x));
+  }
+
+  // Place in a grid row
+  const cols = Math.max(Math.ceil(Math.sqrt(unpositioned.length)), 1);
+  for (let i = 0; i < unpositioned.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const snapped = snapXY(startX + col * GRID_SIZE * 2, startY + row * GRID_SIZE * 2);
+    unpositioned[i].x = snapped.x;
+    unpositioned[i].y = snapped.y;
+  }
+
+  // Persist positions
+  await Promise.all(
+    unpositioned.map((ind) =>
+      api(`/api/individuals/${ind.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ x: ind.x, y: ind.y }),
+      })
+    )
+  );
 }
 
 // --- Parental line handlers ---
@@ -2768,6 +2808,7 @@ fileJsonInput.addEventListener("change", async () => {
       });
     }
     await refreshState();
+    await autoLayoutUnpositioned();
     render();
   } catch (err) {
     console.error("Load failed:", err);
@@ -2802,8 +2843,32 @@ fileGedInput.addEventListener("change", async () => {
       body: JSON.stringify({ content }),
     });
     await refreshState();
+    await autoLayoutUnpositioned();
     render();
   } catch (err) {
     console.error("Import GEDCOM failed:", err);
+  }
+});
+
+btnImportXeg.addEventListener("click", () => {
+  fileXegInput.value = "";
+  fileXegInput.click();
+});
+
+fileXegInput.addEventListener("change", async () => {
+  const file = fileXegInput.files?.[0];
+  if (!file || !pedigreeId) return;
+  try {
+    const content = await file.text();
+    pushUndo(captureSnapshot());
+    await api(`/api/pedigrees/${pedigreeId}/import/xeg`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+    await refreshState();
+    await autoLayoutUnpositioned();
+    render();
+  } catch (err) {
+    console.error("Import XEG failed:", err);
   }
 });

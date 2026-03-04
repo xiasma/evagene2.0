@@ -10,6 +10,10 @@ Evagene is a pedigree management system for clinical and research geneticists. I
 - **Lasso select**: Draw a closed loop around multiple individuals to select and drag them as a group
 - **Properties editor**: Click any individual to open a floating, draggable panel for editing identity, clinical status, dates, notes, and contact information
 - **Pedigree symbols**: Individuals render with standard genetic pedigree notation — affection status (filled/carrier/heterozygous), mortality (diagonal slash, X, text labels), and fertility indicators (crossbars)
+- **Save/Load**: Save and load pedigrees as JSON files for local storage
+- **GEDCOM import/export**: Interoperate with genealogy software via GEDCOM 5.5.1 format
+- **XEG import**: Import legacy pedigrees from Evagene v1 (.xeg XML format)
+- **Zoom and pan**: Scroll wheel zoom, pinch-to-zoom on touch, toolbar buttons, and middle-click/Ctrl+click panning
 
 ## Project structure
 

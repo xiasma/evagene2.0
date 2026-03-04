@@ -71,6 +71,11 @@ The Vite dev server proxies all `/api/*` requests to the API on port 8000, so bo
 4. **Select multiple individuals** by drawing a closed loop (lasso) around them, then drag the group
 5. **Click an individual** to open the properties panel — edit sex, mortality, affection, fertility, name, dates, notes, and contact info
 6. **Drag the properties panel** by its title bar to reposition it; close it with the X button
+7. **Zoom** with the scroll wheel, pinch gesture, or toolbar buttons (+, −, 1:1)
+8. **Pan** by middle-click dragging or Ctrl+click dragging on the canvas
+9. **Save/Load** your work as JSON using the toolbar buttons
+10. **Export/Import GEDCOM** files (.ged) for interoperability with genealogy software
+11. **Import XEG** files (.xeg) from Evagene v1 for legacy pedigree migration
 
 ## Running tests
 

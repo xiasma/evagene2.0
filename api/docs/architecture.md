@@ -7,11 +7,13 @@ api/evagene/
   main.py         FastAPI app factory, router mounting
   models.py       Pydantic models, enums, create/update schemas
   store.py        In-memory data store with CRUD + event indexing
+  gedcom.py       GEDCOM 5.5.1 parser and serializer
+  xeg.py          Evagene v1 .xeg XML parser
   routers/
     individuals.py    Individual CRUD + events
     relationships.py  Relationship CRUD + members + offspring
     events.py         Event CRUD + references
-    pedigrees.py      Pedigree CRUD + entity membership
+    pedigrees.py      Pedigree CRUD + entity membership + GEDCOM import/export + XEG import
     eggs.py           Egg CRUD + events
 ```
 
@@ -128,6 +130,26 @@ The `/offspring` endpoint is a compound operation:
 3. Create an egg linking the relationship to the child individual
 4. Add the egg to the pedigree
 5. Return both the event and egg as `OffspringResult`
+
+### GEDCOM import/export (`gedcom.py`)
+
+The `gedcom.py` module provides two functions:
+
+- **`parse_gedcom(text)`** — Parses GEDCOM 5.5.1 text into `(individuals, relationships, eggs)` tuples. Processes INDI records (NAME, SEX, BIRT, DEAT, NOTE with CONT/CONC continuation) and FAM records (HUSB, WIFE, CHIL). Custom underscore-prefixed tags (`_X`, `_Y`, `_PROBAND`, `_AFFECTION`, `_FERTILITY`, `_DEATH_STATUS`, `_TWIN`, `_MONOZYGOTIC`) preserve Evagene-specific data for round-trip fidelity.
+
+- **`serialize_gedcom(individuals, relationships, eggs, pedigree_name)`** — Produces GEDCOM 5.5.1 text with HEAD (SOUR EVAGENE, GEDC 5.5.1, CHAR UTF-8), INDI records, FAM records, and TRLR. UUIDs are mapped to sequential xrefs (`@I1@`, `@F1@`). Date conversion: ISO `YYYY-MM-DD` ↔ GEDCOM `DD MMM YYYY`.
+
+The pedigrees router exposes these as `GET /{id}/export.ged` (returns `PlainTextResponse` with `Content-Disposition: attachment`) and `POST /{id}/import/gedcom` (accepts `GedcomImportBody` with a `content` string field).
+
+### XEG import (`xeg.py`)
+
+The `xeg.py` module provides `parse_xeg(text)` which parses Evagene v1 `.xeg` XML files into `(individuals, relationships, eggs)` tuples. It performs three passes:
+
+1. **Individuals** — parses `<Individual>` elements with Name, Sex/Gender, X/Y coordinates, DefinedFields (Surname, Given names, Title, contact info, height, weight, consent), clinical properties (Affection, Fertility, Living), and Proband
+2. **Marriages → Relationships** — parses `<Marriage>` elements with `Spouse1Ref`/`Spouse2Ref`, translating v1 GUIDs to new UUIDs
+3. **EggLists → Eggs** — follows the linkage chain: `PregnancyList` → `Pregnancy` (via `MarriageRef`) → `EggList` (via `PregnancyRef`) → `Egg` → `Siblings/Individual[@IndividualRef]`
+
+The pedigrees router exposes this as `POST /{id}/import/xeg` (accepts `XegImportBody` with a `content` string field).
 
 ### Error handling
 

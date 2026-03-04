@@ -40,8 +40,10 @@ relationships[]     Relationships (from API)
 eggs[]              Offspring links (from API)
 selectedIds         Set<string> — lasso multi-selection
 selectedIndividualId  string | null — single-click selection
-drawing/dragging/connecting/drawingParentalLine  — interaction flags
+drawing/dragging/connecting/drawingParentalLine/panning  — interaction flags
 points[]            Current stroke points
+zoomScale           Current zoom level (default 1, range 0.1–5)
+panX, panY          Canvas pan offset in screen pixels
 ```
 
 After every mutation (create, move, edit), `refreshState()` fetches the full `PedigreeDetail` from the API and `render()` redraws the canvas. This keeps the UI in sync without local state diffing.
@@ -52,6 +54,7 @@ Pointer events follow a priority chain on `pointerdown`:
 
 ```
 pointerdown
+  ├─ Middle-click or Ctrl+click? → pan mode (screen-space drag)
   ├─ Hit parental line?      → sibling mode (add child to same relationship)
   ├─ Hit relationship line?  → parental line mode
   ├─ Hit bottom of shape?    → parental line from parent
@@ -196,14 +199,39 @@ Fields are grouped into five sections (Identity, Clinical, Dates, Notes, Contact
 
 The title bar captures pointer events. On `pointerdown`, it records the offset between the cursor and the panel's top-left corner. On `pointermove`, it sets `left`/`top` styles to follow the cursor. The panel stays within the viewport via CSS `position: fixed`.
 
+### Zoom and pan
+
+The canvas supports a zoom/pan transform via `zoomScale`, `panX`, `panY` state variables:
+
+- `render()` wraps all drawing in `ctx.save()` / `ctx.translate(panX, panY)` / `ctx.scale(zoomScale, zoomScale)` / `ctx.restore()`
+- `pointerPos()` converts screen coordinates to world coordinates via `screenToWorld()`: `worldX = (screenX - panX) / zoomScale`
+- Scroll wheel zooms towards cursor by adjusting both scale and pan to keep the world point under the cursor fixed
+- Pinch-to-zoom uses `touchstart`/`touchmove` with two-finger distance tracking
+- Grid lines are drawn only in the visible world-coordinate area for performance
+
+### File I/O handlers
+
+Four toolbar buttons handle file operations:
+
+- **Save** — `GET /api/pedigrees/{id}` → `JSON.stringify` → Blob → download link
+- **Load** — file input → `JSON.parse` → `pushUndo()` → `PUT /api/pedigrees/{id}/restore` + `PATCH` metadata → `refreshState()`
+- **Export .ged** — `fetch` export endpoint → blob → download
+- **Import .ged** — file input → `pushUndo()` → `POST /api/pedigrees/{id}/import/gedcom` → `refreshState()`
+- **Import .xeg** — file input → `pushUndo()` → `POST /api/pedigrees/{id}/import/xeg` → `refreshState()`
+
+All load/import operations push an undo snapshot before mutating state, so they can be reversed with Ctrl+Z.
+
 ## Rendering pipeline (`render()`)
 
 1. Clear the canvas
-2. Draw relationship lines (horizontal segments between paired individuals)
-3. Draw parental lines — eggs are grouped by `relationship_id`:
+2. Apply zoom/pan transform (`translate` + `scale`)
+3. Draw grid (visible world-coordinate area only, when snap-to-grid is enabled)
+4. Draw relationship lines (horizontal segments between paired individuals)
+5. Draw parental lines — eggs are grouped by `relationship_id`:
    - **Regular eggs**: orthogonal stepped paths (origin → midY → child)
    - **Twin eggs** (`properties.twin`): diagonal chevron from a shared apex to each twin child
    - **Monozygotic twins** (`properties.monozygotic`): chevron with horizontal bar across the arms (A-shape)
-4. Draw individual symbols (via `drawIndividual` from `symbols.ts`)
+8. Draw individual symbols (via `drawIndividual` from `symbols.ts`)
+9. Restore canvas transform
 
 The render function reads directly from the module-level `individuals`, `relationships`, and `eggs` arrays. Selection state (`selectedIds`, `selectedIndividualId`) determines stroke colour (blue for selected, slate for default).
