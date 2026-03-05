@@ -211,6 +211,30 @@ type PanelTarget =
 let activePanelTarget: PanelTarget = null;
 let clickHitRelId: string | null = null;
 let clickHitEggId: string | null = null;
+let clickHitLineSegment: HitElement = null;
+
+// Unified element selection/hover for all on-screen items
+type HitElement =
+  | { kind: "individual"; id: string }
+  | { kind: "note"; id: string }
+  | { kind: "marriage"; relId: string }
+  | { kind: "pregnancies"; relId: string }       // vertical stem from parents to siblings bar
+  | { kind: "siblings"; relId: string }           // horizontal sibling bar
+  | { kind: "pregnancy"; eggId: string; relId: string }  // chevron arm or vertical drop (upper 2/3)
+  | { kind: "egg"; eggId: string; relId: string }        // monozygotic crossbar or bottom 1/3 of drop
+  | null;
+let selectedElement: HitElement = null;
+let hoveredElement: HitElement = null;
+
+function hitElementsEqual(a: HitElement, b: HitElement): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.kind !== b.kind) return false;
+  if ("id" in a && "id" in b) return a.id === b.id;
+  if ("eggId" in a && "eggId" in b) return a.eggId === b.eggId && a.relId === b.relId;
+  if ("relId" in a && "relId" in b) return a.relId === b.relId;
+  return false;
+}
 
 // Connection drawing state
 let connecting = false;
@@ -595,6 +619,192 @@ function hitParentalLineEgg(pos: Point): PlacedEgg | null {
   return null;
 }
 
+/** Compute origin point for a relationship's parental structure. */
+function getParentalOrigin(rel: PlacedRelationship): { x: number; y: number } | null {
+  const half = SHAPE_SIZE / 2;
+  if (rel.members.length >= 2) {
+    return getRelationshipMidpoint(rel);
+  } else if (rel.members.length === 1) {
+    const parent = individuals.find((i) => i.id === rel.members[0]);
+    if (parent && parent.x != null && parent.y != null) {
+      return { x: parent.x, y: parent.y + half };
+    }
+  } else if (rel.members.length === 0) {
+    const siblingEggs = eggs.filter((e) => e.relationship_id === rel.id && e.individual_id);
+    const siblings = siblingEggs
+      .map((e) => individuals.find((i) => i.id === e.individual_id))
+      .filter((i): i is PlacedIndividual => i != null && i.x != null && i.y != null);
+    if (siblings.length >= 2) {
+      const avgX = siblings.reduce((s, c) => s + c.x, 0) / siblings.length;
+      const minY = Math.min(...siblings.map((c) => c.y - half));
+      return { x: avgX, y: minY - SIBLING_BAR_HEIGHT * 1.5 };
+    }
+  }
+  return null;
+}
+
+/** Hit-test the parental stem: vertical line from origin down to sibling bar. */
+function hitParentalStem(pos: Point): PlacedRelationship | null {
+  const relsWithEggs = new Set(eggs.filter((e) => e.relationship_id).map((e) => e.relationship_id!));
+  for (const relId of relsWithEggs) {
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel || rel.members.length === 0) continue; // no stem for parentless siblings
+    const origin = getParentalOrigin(rel);
+    if (!origin) continue;
+    const info = getSiblingBarInfo(rel);
+    if (!info) continue;
+    const dist = pointToSegmentDist(pos.x, pos.y, origin.x, origin.y, origin.x, info.barY);
+    if (dist <= PARENTAL_TOLERANCE) return rel;
+  }
+  return null;
+}
+
+/** Hit-test a sibling vertical drop (bar → child). Returns egg, rel, and fraction along drop. */
+function hitSiblingDrop(pos: Point): { egg: PlacedEgg; rel: PlacedRelationship; frac: number } | null {
+  const half = SHAPE_SIZE / 2;
+  const relsWithEggs = new Set(eggs.filter((e) => e.relationship_id).map((e) => e.relationship_id!));
+  for (const relId of relsWithEggs) {
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) continue;
+    const info = getSiblingBarInfo(rel);
+    if (!info) continue;
+    const relEggs = eggs.filter((e) => e.relationship_id === rel.id && e.individual_id);
+    const twinEggs = relEggs.filter((e) => e.properties?.twin);
+    const regularEggs = relEggs.filter((e) => !e.properties?.twin);
+    const effectiveRegular = twinEggs.length >= 2 ? regularEggs : [...regularEggs, ...twinEggs];
+    for (const egg of effectiveRegular) {
+      const child = individuals.find((i) => i.id === egg.individual_id);
+      if (!child || child.x == null || child.y == null) continue;
+      const childTopY = child.y - half;
+      const dist = pointToSegmentDist(pos.x, pos.y, child.x, info.barY, child.x, childTopY);
+      if (dist <= PARENTAL_TOLERANCE) {
+        const totalLen = childTopY - info.barY;
+        const frac = totalLen > 0 ? (pos.y - info.barY) / totalLen : 0;
+        return { egg, rel, frac: Math.max(0, Math.min(1, frac)) };
+      }
+    }
+  }
+  return null;
+}
+
+/** Hit-test a twin chevron arm (apex → twin child). Returns the egg for that twin. */
+function hitTwinArm(pos: Point): { egg: PlacedEgg; rel: PlacedRelationship } | null {
+  const half = SHAPE_SIZE / 2;
+  const relsWithTwinEggs = new Set(
+    eggs.filter((e) => e.relationship_id && e.properties?.twin).map((e) => e.relationship_id!)
+  );
+  for (const relId of relsWithTwinEggs) {
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) continue;
+    const info = getChevronApexInfo(rel);
+    if (!info) continue;
+    const twinEggs = eggs.filter((e) => e.relationship_id === rel.id && e.individual_id && e.properties?.twin);
+    if (twinEggs.length < 2) continue;
+    for (const egg of twinEggs) {
+      const child = individuals.find((i) => i.id === egg.individual_id);
+      if (!child || child.x == null || child.y == null) continue;
+      const childTopY = child.y - half;
+      const dist = pointToSegmentDist(pos.x, pos.y, info.apexX, info.apexY, child.x, childTopY);
+      if (dist <= PARENTAL_TOLERANCE) return { egg, rel };
+    }
+  }
+  return null;
+}
+
+/** Hit-test the monozygotic crossbar between twins. */
+function hitMonozygoticBar(pos: Point): { relId: string; eggIds: string[] } | null {
+  const half = SHAPE_SIZE / 2;
+  const relsWithTwinEggs = new Set(
+    eggs.filter((e) => e.relationship_id && e.properties?.twin && e.properties?.monozygotic).map((e) => e.relationship_id!)
+  );
+  for (const relId of relsWithTwinEggs) {
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) continue;
+    const info = getChevronApexInfo(rel);
+    if (!info) continue;
+    const twinEggs = eggs.filter((e) => e.relationship_id === rel.id && e.individual_id && e.properties?.twin);
+    if (twinEggs.length !== 2) continue;
+    const tc = twinEggs.map((e) => {
+      const ind = individuals.find((i) => i.id === e.individual_id);
+      return ind && ind.x != null && ind.y != null ? { x: ind.x, topY: ind.y - half } : null;
+    }).filter((t): t is { x: number; topY: number } => t != null);
+    if (tc.length !== 2) continue;
+    const barY = (info.apexY + Math.min(tc[0].topY, tc[1].topY)) / 2;
+    const frac0 = (barY - info.apexY) / (tc[0].topY - info.apexY);
+    const frac1 = (barY - info.apexY) / (tc[1].topY - info.apexY);
+    const barX0 = info.apexX + (tc[0].x - info.apexX) * frac0;
+    const barX1 = info.apexX + (tc[1].x - info.apexX) * frac1;
+    const dist = pointToSegmentDist(pos.x, pos.y, barX0, barY, barX1, barY);
+    if (dist <= PARENTAL_TOLERANCE) return { relId, eggIds: twinEggs.map((e) => e.id) };
+  }
+  return null;
+}
+
+/** Hit-test the horizontal sibling bar itself. Returns as a selectable element. */
+function hitSiblingsBar(pos: Point): PlacedRelationship | null {
+  const relsWithEggs = new Set(eggs.filter((e) => e.relationship_id).map((e) => e.relationship_id!));
+  for (const relId of relsWithEggs) {
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) continue;
+    const info = getSiblingBarInfo(rel);
+    if (!info) continue;
+    if (Math.abs(pos.y - info.barY) <= PARENTAL_TOLERANCE &&
+        pos.x >= info.barLeft - 5 && pos.x <= info.barRight + 5) {
+      return rel;
+    }
+  }
+  return null;
+}
+
+/**
+ * Determine the most specific element hit at a position.
+ * Priority: monozygotic bar > twin arm > egg (bottom 1/3 of drop) >
+ *           pregnancy (upper 2/3) > siblings bar > parental stem > marriage
+ */
+function hitLineSegment(pos: Point): HitElement {
+  const monoBar = hitMonozygoticBar(pos);
+  if (monoBar) return { kind: "egg", eggId: monoBar.eggIds[0], relId: monoBar.relId };
+  const twin = hitTwinArm(pos);
+  if (twin) return { kind: "pregnancy", eggId: twin.egg.id, relId: twin.rel.id };
+  const drop = hitSiblingDrop(pos);
+  if (drop) {
+    // Bottom 1/3 of the vertical drop = egg, upper 2/3 = pregnancy
+    if (drop.frac >= 2 / 3) {
+      return { kind: "egg", eggId: drop.egg.id, relId: drop.rel.id };
+    }
+    return { kind: "pregnancy", eggId: drop.egg.id, relId: drop.rel.id };
+  }
+  const bar = hitSiblingsBar(pos);
+  if (bar) return { kind: "siblings", relId: bar.id };
+  const stem = hitParentalStem(pos);
+  if (stem) return { kind: "pregnancies", relId: stem.id };
+  const marriage = hitRelationshipLine(pos);
+  if (marriage) return { kind: "marriage", relId: marriage.id };
+  return null;
+}
+
+/** Hit-test any on-screen element (individuals, notes, lines). */
+function hitAnyElement(pos: Point): HitElement {
+  // Individuals
+  const hitRadius = SHAPE_SIZE / 2 + 4;
+  const indHit = individuals.find(
+    (ind) => ind.x != null && ind.y != null && Math.hypot(pos.x - ind.x, pos.y - ind.y) <= hitRadius,
+  );
+  if (indHit) return { kind: "individual", id: indHit.id };
+  // Floating notes
+  if (showAllFloatingNotes) {
+    for (const note of floatingNotes) {
+      if (!note.visible) continue;
+      const b = getNoteBounds(note);
+      if (pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
+        return { kind: "note", id: note.id };
+      }
+    }
+  }
+  // Line segments
+  return hitLineSegment(pos);
+}
+
 function hitBottom(pos: Point): PlacedIndividual | null {
   const half = SHAPE_SIZE / 2;
   for (const ind of individuals) {
@@ -794,6 +1004,7 @@ function hitIndividualNote(pos: Point): PlacedIndividual | null {
 
 function beginStroke(pos: Point) {
   drawing = true;
+  hoveredElement = null;
   points = [pos];
   ctx.save();
   ctx.translate(panX, panY);
@@ -811,6 +1022,7 @@ canvas.addEventListener("pointerdown", (e) => {
   const pos = pointerPos(e);
   pointerMoved = false;
   clickHitId = null;
+  hoveredElement = null;
 
   // Middle-click or Ctrl+click → pan
   if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
@@ -827,6 +1039,7 @@ canvas.addEventListener("pointerdown", (e) => {
   const noteHit = hitFloatingNote(pos);
   if (noteHit) {
     selectedNoteId = noteHit.id;
+    selectedElement = { kind: "note", id: noteHit.id };
     draggingNoteId = noteHit.id;
     noteDragOffset = { dx: noteHit.x - pos.x, dy: noteHit.y - pos.y };
     render();
@@ -866,6 +1079,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (parentalHit) {
     const eggHit = hitParentalLineEgg(pos);
     clickHitEggId = eggHit ? eggHit.id : null;
+    clickHitLineSegment = hitLineSegment(pos);
     drawingParentalLine = true;
     parentalSource = { type: "relationship", relId: parentalHit.id };
     beginStroke(pos);
@@ -876,6 +1090,7 @@ canvas.addEventListener("pointerdown", (e) => {
   const relHit = hitRelationshipLine(pos);
   if (relHit) {
     clickHitRelId = relHit.id;
+    clickHitLineSegment = { kind: "marriage", relId: relHit.id };
     drawingParentalLine = true;
     parentalSource = { type: "relationship", relId: relHit.id };
     beginStroke(pos);
@@ -923,6 +1138,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (hit && selectedIds.has(hit.id)) {
     // Hit a selected shape → group drag all selected
     clickHitId = hit.id;
+    hoveredElement = null;
     dragging = true;
     groupDragOffsets = new Map();
     for (const id of selectedIds) {
@@ -935,6 +1151,7 @@ canvas.addEventListener("pointerdown", (e) => {
     // Hit an unselected shape → clear lasso selection, single drag
     clickHitId = hit.id;
     selectedIds = new Set();
+    selectedElement = null;
     selectedNoteId = null;
     dragging = true;
     groupDragOffsets = new Map();
@@ -944,6 +1161,7 @@ canvas.addEventListener("pointerdown", (e) => {
     // Hit nothing → clear all selection, close panel, enter draw mode
     selectedIds = new Set();
     selectedIndividualId = null;
+    selectedElement = null;
     selectedNoteId = null;
     closeActivePanel();
     render();
@@ -1011,7 +1229,16 @@ canvas.addEventListener("pointermove", (e) => {
     return;
   }
 
-  if (!drawing) return;
+  if (!drawing) {
+    // Hover tracking when idle
+    const prevHover = hoveredElement;
+    hoveredElement = hitAnyElement(pos);
+    // Update cursor
+    canvas.style.cursor = hoveredElement ? "pointer" : "";
+    // Re-render only if hover changed
+    if (!hitElementsEqual(prevHover, hoveredElement)) render();
+    return;
+  }
   points.push(pos);
   ctx.lineTo(pos.x, pos.y);
   ctx.stroke();
@@ -1061,6 +1288,7 @@ canvas.addEventListener("pointerup", () => {
   if (clickHitId && !pointerMoved) {
     const id = clickHitId;
     selectedIds = new Set();
+    selectedElement = { kind: "individual", id };
     selectedNoteId = null;
     dragging = false;
     groupDragOffsets = new Map();
@@ -1103,21 +1331,29 @@ canvas.addEventListener("pointerup", () => {
     drawingParentalLine = false;
     parentalSource = null;
 
-    // Single-click (no drag) on parental line → open egg panel
+    // Single-click (no drag) on parental line → select line + open egg panel
     if (!pointerMoved && clickHitEggId) {
       const eggId = clickHitEggId;
+      selectedElement = clickHitLineSegment;
       clickHitEggId = null;
       clickHitRelId = null;
+      clickHitLineSegment = null;
+      selectedIndividualId = null;
+      selectedIds = new Set();
       render();
       openPanelFor({ type: "egg", id: eggId });
       return;
     }
 
-    // Single-click (no drag) on relationship line → open relationship panel
+    // Single-click (no drag) on relationship line → select line + open relationship panel
     if (!pointerMoved && clickHitRelId) {
       const relId = clickHitRelId;
+      selectedElement = clickHitLineSegment;
       clickHitRelId = null;
       clickHitEggId = null;
+      clickHitLineSegment = null;
+      selectedIndividualId = null;
+      selectedIds = new Set();
       render();
       openPanelFor({ type: "relationship", id: relId });
       return;
@@ -1125,6 +1361,7 @@ canvas.addEventListener("pointerup", () => {
 
     clickHitRelId = null;
     clickHitEggId = null;
+    clickHitLineSegment = null;
 
     if (points.length > 0 && source) {
       const endpoint = points[points.length - 1];
@@ -1146,7 +1383,33 @@ canvas.addEventListener("pointerup", () => {
           pushUndo(captureSnapshot());
           handleParentalLineFromRelationship(source.relId, child.id);
         } else {
-          rejectStroke(points);
+          // Check if endpoint hits another relationship's parental structure or marriage line
+          const targetParental = hitParentalLine(endpoint);
+          const targetMarriage = hitRelationshipLine(endpoint);
+          if (targetParental && targetParental.id !== source.relId) {
+            render();
+            pushUndo(captureSnapshot());
+            const sourceRel = relationships.find((r) => r.id === source.relId);
+            const targetRel = relationships.find((r) => r.id === targetParental.id);
+            // Merge into whichever relationship has members (parents)
+            if (targetRel && targetRel.members.length > 0) {
+              handleMergeRelationships(targetParental.id, source.relId);
+            } else {
+              handleMergeRelationships(source.relId, targetParental.id);
+            }
+          } else if (targetMarriage && targetMarriage.id !== source.relId) {
+            render();
+            pushUndo(captureSnapshot());
+            const sourceRel = relationships.find((r) => r.id === source.relId);
+            const targetRel = relationships.find((r) => r.id === targetMarriage.id);
+            if (targetRel && targetRel.members.length > 0) {
+              handleMergeRelationships(targetMarriage.id, source.relId);
+            } else {
+              handleMergeRelationships(source.relId, targetMarriage.id);
+            }
+          } else {
+            rejectStroke(points);
+          }
         }
       } else if (source.type === "parent") {
         const child = hitIndividual(endpoint);
@@ -1256,6 +1519,12 @@ canvas.addEventListener("pointerup", () => {
   // Try scribble-delete BEFORE shape recognition — scribbles over existing
   // entities often get mis-recognised as circles/squares
   if (tryScribbleDelete(points)) return;
+
+  // If the stroke crosses any existing line, it cannot be a new individual
+  if (strokeCrossesLine(points)) {
+    rejectStroke(points);
+    return;
+  }
 
   const shape = recognise(points);
 
@@ -1459,6 +1728,30 @@ async function handleParentalLineFromRelationship(
     render();
   } catch (err) {
     console.error("Failed to add offspring from relationship:", err);
+    showToast("error" as Shape);
+  }
+}
+
+/** Move all eggs from donorRelId into targetRelId, then clean up the donor if empty. */
+async function handleMergeRelationships(targetRelId: string, donorRelId: string) {
+  if (!pedigreeId) return;
+  try {
+    const donorEggs = eggs.filter((e) => e.relationship_id === donorRelId && e.individual_id);
+    for (const egg of donorEggs) {
+      await api(`/api/eggs/${egg.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ relationship_id: targetRelId }),
+      });
+    }
+    // If donor has no members left, delete it
+    const donorRel = relationships.find((r) => r.id === donorRelId);
+    if (donorRel && donorRel.members.length === 0) {
+      await api(`/api/relationships/${donorRelId}`, { method: "DELETE" });
+    }
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to merge relationships:", err);
     showToast("error" as Shape);
   }
 }
@@ -1706,14 +1999,28 @@ async function deleteIndividuals(ids: string[]) {
         await api(`/api/eggs/${egg.id}`, { method: "DELETE" });
       }
 
-      // 2. Delete relationships where this individual is a member, and their eggs
+      // 2. Handle relationships where this individual is a member
       const indRels = relationships.filter((r) => r.members.includes(id));
       for (const rel of indRels) {
+        // Remove the individual from the relationship's member list
+        await api(`/api/relationships/${rel.id}/members/${id}`, { method: "DELETE" });
+
+        // Check if the relationship should be fully deleted:
+        // remaining members after removal
+        const remainingMembers = rel.members.filter((m) => m !== id && !ids.includes(m));
         const relEggs = eggs.filter((e) => e.relationship_id === rel.id);
-        for (const egg of relEggs) {
-          await api(`/api/eggs/${egg.id}`, { method: "DELETE" });
+        // Child eggs are those linking a child individual (excluding ones we're already deleting)
+        const childEggs = relEggs.filter(
+          (e) => e.individual_id && !ids.includes(e.individual_id)
+        );
+
+        if (remainingMembers.length === 0 && childEggs.length === 0) {
+          // No partners left and no children — delete the relationship and its eggs
+          for (const egg of relEggs) {
+            await api(`/api/eggs/${egg.id}`, { method: "DELETE" });
+          }
+          await api(`/api/relationships/${rel.id}`, { method: "DELETE" });
         }
-        await api(`/api/relationships/${rel.id}`, { method: "DELETE" });
       }
 
       // 3. Delete the individual
@@ -1727,6 +2034,108 @@ async function deleteIndividuals(ids: string[]) {
     render();
   } catch (err) {
     console.error("Failed to delete individuals:", err);
+  }
+}
+
+// --- Delete line segments ---
+
+async function deleteSelectedElement(sel: HitElement) {
+  if (!sel || !pedigreeId) return;
+  if (sel.kind === "individual" || sel.kind === "note") return; // handled elsewhere
+  pushUndo(captureSnapshot());
+  try {
+    switch (sel.kind) {
+      case "marriage":
+        await deleteMarriageLine(sel.relId);
+        break;
+      case "pregnancies":
+        await deleteParentalStem(sel.relId);
+        break;
+      case "siblings":
+        // Deleting the sibling bar orphans all children (same as parental stem)
+        await deleteParentalStem(sel.relId);
+        break;
+      case "pregnancy":
+        await deleteSiblingDrop(sel.eggId);
+        break;
+      case "egg":
+        await deleteTwinLine(sel.eggId, sel.relId);
+        break;
+    }
+    selectedElement = null;
+    closeActivePanel();
+    await refreshState();
+    render();
+  } catch (err) {
+    console.error("Failed to delete element:", err);
+  }
+}
+
+/** Delete a marriage line. No children: delete relationship. With children: orphan them. */
+async function deleteMarriageLine(relId: string) {
+  const relEggs = eggs.filter((e) => e.relationship_id === relId && e.individual_id);
+  if (relEggs.length === 0) {
+    // No children — simply delete the relationship
+    await api(`/api/relationships/${relId}`, { method: "DELETE" });
+  } else {
+    // Has children — remove all members to orphan children (sibling relationships remain)
+    const rel = relationships.find((r) => r.id === relId);
+    if (!rel) return;
+    for (const memberId of [...rel.members]) {
+      await api(`/api/relationships/${relId}/members/${memberId}`, { method: "DELETE" });
+    }
+  }
+}
+
+/** Delete the parental stem: keep marriage, orphan children into new 0-member relationship. */
+async function deleteParentalStem(relId: string) {
+  const relEggs = eggs.filter((e) => e.relationship_id === relId && e.individual_id);
+  if (relEggs.length === 0) return;
+  // Create a new relationship with 0 members to hold the orphaned children
+  const newRel = await api<{ id: string }>("/api/relationships", {
+    method: "POST",
+    body: JSON.stringify({ members: [] }),
+  });
+  // Add the new relationship to the pedigree
+  await api(`/api/pedigrees/${pedigreeId}/relationships/${newRel.id}`, { method: "POST" });
+  // Move all eggs to the new relationship
+  for (const egg of relEggs) {
+    await api(`/api/eggs/${egg.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ relationship_id: newRel.id }),
+    });
+  }
+}
+
+/** Delete a sibling vertical drop: remove that child from the family. */
+async function deleteSiblingDrop(eggId: string) {
+  await api(`/api/eggs/${eggId}`, { method: "DELETE" });
+}
+
+/** Delete a twin line: dizygous → non-twin sibling; monozygous → dizygous. */
+async function deleteTwinLine(eggId: string, relId: string) {
+  const egg = eggs.find((e) => e.id === eggId);
+  if (!egg) return;
+  const twinEggs = eggs.filter(
+    (e) => e.relationship_id === relId && e.individual_id && e.properties?.twin
+  );
+  const isMonozygotic = egg.properties?.monozygotic;
+  if (isMonozygotic) {
+    // Monozygotic → dizygous: remove monozygotic flag from all twins in the group
+    for (const te of twinEggs) {
+      const props = { ...(te.properties ?? {}), monozygotic: false };
+      await api(`/api/eggs/${te.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ properties: props }),
+      });
+    }
+  } else {
+    // Dizygous → non-twin sibling: remove twin flag from this egg
+    const props = { ...(egg.properties ?? {}), twin: false };
+    await api(`/api/eggs/${eggId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ properties: props }),
+    });
   }
 }
 
@@ -2076,6 +2485,12 @@ document.addEventListener("keydown", (e) => {
       deleteSelectedNote();
       return;
     }
+    // Delete selected line segment
+    if (selectedElement) {
+      e.preventDefault();
+      deleteSelectedElement(selectedElement);
+      return;
+    }
     const ids = new Set<string>(selectedIds);
     if (selectedIndividualId) ids.add(selectedIndividualId);
     if (ids.size === 0) return;
@@ -2309,10 +2724,44 @@ function tryScribbleDelete(pts: Point[]): boolean {
     }
   }
 
-  if (scribbledIds.length === 0) return false;
+  if (scribbledIds.length === 0) {
+    // Try scribble-delete on line segments
+    return tryScribbleDeleteLine(pts);
+  }
 
   flashAndDelete(scribbledIds);
   return true;
+}
+
+function tryScribbleDeleteLine(pts: Point[]): boolean {
+  if (pts.length < 10) return false;
+  // Check if scribble passes near any specific line segment multiple times
+  for (const pt of pts) {
+    const seg = hitLineSegment(pt);
+    if (!seg) continue;
+    // Count how many scribble points are near this segment
+    let nearCount = 0;
+    for (const p of pts) {
+      const s2 = hitLineSegment(p);
+      if (s2 && hitElementsEqual(s2, seg)) {
+        nearCount++;
+      }
+    }
+    if (nearCount >= pts.length * 0.3) {
+      selectedElement = seg;
+      deleteSelectedElement(seg);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Returns true if any point in the stroke is near an existing line segment. */
+function strokeCrossesLine(pts: Point[]): boolean {
+  for (const pt of pts) {
+    if (hitLineSegment(pt)) return true;
+  }
+  return false;
 }
 
 function flashAndDelete(ids: string[]) {
@@ -2644,12 +3093,39 @@ function render() {
     const effectiveRegular = twinEggs.length >= 2 ? regularEggs : [...regularEggs, ...twinEggs];
     const effectiveTwins = twinEggs.length >= 2 ? twinEggs : [];
 
+    // Resolve twin children for chevron rendering
+    let twinChildren: { egg: PlacedEgg; x: number; topY: number }[] = [];
+    let chevronApexX = 0;
+    let chevronApexY = 0;
+    if (effectiveTwins.length >= 2) {
+      twinChildren = effectiveTwins
+        .map((e) => ({
+          egg: e,
+          ind: individuals.find((i) => i.id === e.individual_id),
+        }))
+        .filter((t) => t.ind && t.ind.x != null && t.ind.y != null)
+        .map((t) => ({
+          egg: t.egg,
+          x: t.ind!.x,
+          topY: t.ind!.y - half,
+        }));
+      if (twinChildren.length >= 2) {
+        chevronApexX = twinChildren.reduce((s, c) => s + c.x, 0) / twinChildren.length;
+        const minTopY = Math.min(...twinChildren.map((c) => c.topY));
+        const defaultApexY = minTopY - (minTopY - origin.y) * 0.8;
+        chevronApexY = defaultApexY + (chevronApexOffsets.get(rel.id) ?? 0);
+      }
+    }
+
     // Draw regular (non-twin) eggs: single horizontal bar + vertical drops
     const regChildren = effectiveRegular
       .map((e) => individuals.find((i) => i.id === e.individual_id))
       .filter((i): i is PlacedIndividual => i != null && i.x != null && i.y != null);
 
-    if (regChildren.length > 0) {
+    const hasTwins = twinChildren.length >= 2;
+    const hasRegular = regChildren.length > 0;
+
+    if (hasRegular) {
       const noParents = rel.members.length === 0;
       const minTopY = Math.min(...regChildren.map((c) => c.y - half));
       const defaultBarY = noParents
@@ -2661,6 +3137,7 @@ function render() {
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2;
 
+      // Single vertical stem from origin to sibling bar
       if (!noParents) {
         ctx.beginPath();
         ctx.moveTo(origin.x, origin.y);
@@ -2668,8 +3145,10 @@ function render() {
         ctx.stroke();
       }
 
+      // Horizontal sibling bar — extend to include twin chevron apex if twins exist
       const xs = regChildren.map((c) => c.x);
       if (!noParents) xs.push(origin.x);
+      if (hasTwins) xs.push(chevronApexX);
       const barLeft = Math.min(...xs);
       const barRight = Math.max(...xs);
       ctx.beginPath();
@@ -2677,6 +3156,7 @@ function render() {
       ctx.lineTo(barRight, barY);
       ctx.stroke();
 
+      // Vertical drops to each regular child
       for (const child of regChildren) {
         const childTopY = child.y - half;
         ctx.beginPath();
@@ -2684,62 +3164,214 @@ function render() {
         ctx.lineTo(child.x, childTopY);
         ctx.stroke();
       }
+
+      // Twin chevron connects from the sibling bar, not from origin
+      if (hasTwins) {
+        ctx.beginPath();
+        ctx.moveTo(chevronApexX, barY);
+        ctx.lineTo(chevronApexX, chevronApexY);
+        ctx.stroke();
+      }
+    } else if (hasTwins && rel.members.length > 0) {
+      // Twins only, no regular children — single stem from origin to apex
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(origin.x, chevronApexY);
+      if (Math.abs(origin.x - chevronApexX) > 1) {
+        ctx.lineTo(chevronApexX, chevronApexY);
+      }
+      ctx.stroke();
     }
 
-    // Draw twin eggs as chevron from shared apex
-    if (effectiveTwins.length >= 2) {
-      const twinChildren = effectiveTwins
-        .map((e) => ({
-          egg: e,
-          ind: individuals.find((i) => i.id === e.individual_id),
-        }))
-        .filter((t) => t.ind && t.ind.x != null && t.ind.y != null)
-        .map((t) => ({
-          egg: t.egg,
-          x: t.ind!.x,
-          topY: t.ind!.y - half,
-        }));
+    // Draw twin chevron arms and monozygotic bar
+    if (hasTwins) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      const isMonozygotic = effectiveTwins.some((e) => e.properties?.monozygotic);
 
-      if (twinChildren.length >= 2) {
-        const avgX = twinChildren.reduce((s, c) => s + c.x, 0) / twinChildren.length;
-        const minTopY = Math.min(...twinChildren.map((c) => c.topY));
-        const defaultApexY = minTopY - (minTopY - origin.y) * 0.8;
-        const apexY = defaultApexY + (chevronApexOffsets.get(rel.id) ?? 0);
+      for (const tc of twinChildren) {
+        ctx.beginPath();
+        ctx.moveTo(chevronApexX, chevronApexY);
+        ctx.lineTo(tc.x, tc.topY);
+        ctx.stroke();
+      }
 
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = 2;
-        if (rel.members.length > 0) {
-          ctx.beginPath();
-          ctx.moveTo(origin.x, origin.y);
-          ctx.lineTo(origin.x, apexY);
-          if (Math.abs(origin.x - avgX) > 1) {
-            ctx.lineTo(avgX, apexY);
-          }
-          ctx.stroke();
-        }
-
-        const isMonozygotic = effectiveTwins.some((e) => e.properties?.monozygotic);
-
-        for (const tc of twinChildren) {
-          ctx.beginPath();
-          ctx.moveTo(avgX, apexY);
-          ctx.lineTo(tc.x, tc.topY);
-          ctx.stroke();
-        }
-
-        if (isMonozygotic && twinChildren.length === 2) {
-          const barY = (apexY + Math.min(twinChildren[0].topY, twinChildren[1].topY)) / 2;
-          const frac0 = (barY - apexY) / (twinChildren[0].topY - apexY);
-          const frac1 = (barY - apexY) / (twinChildren[1].topY - apexY);
-          const barX0 = avgX + (twinChildren[0].x - avgX) * frac0;
-          const barX1 = avgX + (twinChildren[1].x - avgX) * frac1;
-          ctx.beginPath();
-          ctx.moveTo(barX0, barY);
-          ctx.lineTo(barX1, barY);
-          ctx.stroke();
-        }
+      if (isMonozygotic && twinChildren.length === 2) {
+        const monoBarY = (chevronApexY + Math.min(twinChildren[0].topY, twinChildren[1].topY)) / 2;
+        const frac0 = (monoBarY - chevronApexY) / (twinChildren[0].topY - chevronApexY);
+        const frac1 = (monoBarY - chevronApexY) / (twinChildren[1].topY - chevronApexY);
+        const barX0 = chevronApexX + (twinChildren[0].x - chevronApexX) * frac0;
+        const barX1 = chevronApexX + (twinChildren[1].x - chevronApexX) * frac1;
+        ctx.beginPath();
+        ctx.moveTo(barX0, monoBarY);
+        ctx.lineTo(barX1, monoBarY);
+        ctx.stroke();
       }
     }
+  }
+
+  // Draw hover and selection highlights for all elements
+  const hoverColor = cssVar("--color-stroke-hover");
+  const selectionColor = cssVar("--color-stroke-selected");
+  const glowColor = cssVar("--color-selection-glow");
+
+  function drawElementHighlight(elem: HitElement, mode: "hover" | "selected") {
+    if (!elem) return;
+    const half = SHAPE_SIZE / 2;
+    ctx.save();
+    if (mode === "selected") {
+      ctx.strokeStyle = selectionColor;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = 12;
+    } else {
+      ctx.strokeStyle = hoverColor;
+      ctx.lineWidth = 5;
+      ctx.globalAlpha = 1;
+    }
+    switch (elem.kind) {
+      case "individual": {
+        const ind = individuals.find((i) => i.id === elem.id);
+        if (ind && ind.x != null && ind.y != null) {
+          ctx.beginPath();
+          ctx.arc(ind.x, ind.y, half + 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "note": {
+        const note = floatingNotes.find((n) => n.id === elem.id);
+        if (note) {
+          const b = getNoteBounds(note);
+          ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+        }
+        break;
+      }
+      case "marriage": {
+        const rel = relationships.find((r) => r.id === elem.relId);
+        if (rel && rel.members.length >= 2) {
+          const a = individuals.find((i) => i.id === rel.members[0]);
+          const b = individuals.find((i) => i.id === rel.members[1]);
+          if (a && b && a.x != null && a.y != null && b.x != null && b.y != null) {
+            const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+            ctx.beginPath();
+            ctx.moveTo(left.x + half, left.y);
+            ctx.lineTo(right.x - half, right.y);
+            ctx.stroke();
+          }
+        }
+        break;
+      }
+      case "pregnancies": {
+        const rel = relationships.find((r) => r.id === elem.relId);
+        if (rel) {
+          const origin = getParentalOrigin(rel);
+          const info = getSiblingBarInfo(rel);
+          if (origin && info) {
+            ctx.beginPath();
+            ctx.moveTo(origin.x, origin.y);
+            ctx.lineTo(origin.x, info.barY);
+            ctx.stroke();
+          }
+        }
+        break;
+      }
+      case "siblings": {
+        const rel = relationships.find((r) => r.id === elem.relId);
+        if (rel) {
+          const info = getSiblingBarInfo(rel);
+          if (info) {
+            ctx.beginPath();
+            ctx.moveTo(info.barLeft, info.barY);
+            ctx.lineTo(info.barRight, info.barY);
+            ctx.stroke();
+          }
+        }
+        break;
+      }
+      case "pregnancy": {
+        const theEgg = eggs.find((e) => e.id === elem.eggId);
+        const theRel = relationships.find((r) => r.id === elem.relId);
+        if (theEgg && theRel) {
+          const child = individuals.find((i) => i.id === theEgg.individual_id);
+          if (child && child.x != null && child.y != null) {
+            // Check if this is a twin chevron arm or a regular sibling drop
+            if (theEgg.properties?.twin) {
+              const info = getChevronApexInfo(theRel);
+              if (info) {
+                ctx.beginPath();
+                ctx.moveTo(info.apexX, info.apexY);
+                ctx.lineTo(child.x, child.y - half);
+                ctx.stroke();
+              }
+            } else {
+              const info = getSiblingBarInfo(theRel);
+              if (info) {
+                ctx.beginPath();
+                ctx.moveTo(child.x, info.barY);
+                ctx.lineTo(child.x, child.y - half);
+                ctx.stroke();
+              }
+            }
+          }
+        }
+        break;
+      }
+      case "egg": {
+        const theRel = relationships.find((r) => r.id === elem.relId);
+        if (theRel) {
+          // Could be monozygotic crossbar or bottom 1/3 of a drop
+          const info = getChevronApexInfo(theRel);
+          const twinEggs = eggs.filter((e) => e.relationship_id === theRel.id && e.properties?.twin && e.properties?.monozygotic);
+          if (info && twinEggs.length === 2) {
+            // Draw the monozygotic crossbar
+            const tc = twinEggs.map((e) => {
+              const ind = individuals.find((i) => i.id === e.individual_id);
+              return ind && ind.x != null && ind.y != null ? { x: ind.x, topY: ind.y - half } : null;
+            }).filter((t): t is { x: number; topY: number } => t != null);
+            if (tc.length === 2) {
+              const barY = (info.apexY + Math.min(tc[0].topY, tc[1].topY)) / 2;
+              const frac0 = (barY - info.apexY) / (tc[0].topY - info.apexY);
+              const frac1 = (barY - info.apexY) / (tc[1].topY - info.apexY);
+              const barX0 = info.apexX + (tc[0].x - info.apexX) * frac0;
+              const barX1 = info.apexX + (tc[1].x - info.apexX) * frac1;
+              ctx.beginPath();
+              ctx.moveTo(barX0, barY);
+              ctx.lineTo(barX1, barY);
+              ctx.stroke();
+            }
+          } else {
+            // Bottom 1/3 of a sibling drop
+            const theEgg = eggs.find((e) => e.id === elem.eggId);
+            if (theEgg) {
+              const child = individuals.find((i) => i.id === theEgg.individual_id);
+              const barInfo = getSiblingBarInfo(theRel);
+              if (child && child.x != null && child.y != null && barInfo) {
+                const childTopY = child.y - half;
+                const dropTop = barInfo.barY + (childTopY - barInfo.barY) * (2 / 3);
+                ctx.beginPath();
+                ctx.moveTo(child.x, dropTop);
+                ctx.lineTo(child.x, childTopY);
+                ctx.stroke();
+              }
+            }
+          }
+        }
+        break;
+      }
+    }
+    ctx.restore();
+  }
+
+  // Draw hover (behind selection)
+  if (hoveredElement && !hitElementsEqual(hoveredElement, selectedElement)) {
+    drawElementHighlight(hoveredElement, "hover");
+  }
+  // Draw selection with glow
+  if (selectedElement) {
+    drawElementHighlight(selectedElement, "selected");
   }
 
   // Draw find highlights (before individuals so they appear behind)

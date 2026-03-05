@@ -5,7 +5,6 @@ import {
   makeField,
   makeInput,
   makeTextarea,
-  makeCheckboxRow,
   heading,
 } from "./panel-utils";
 import { buildEventEditor } from "./event-editor";
@@ -63,11 +62,6 @@ function buildDOM(data: EggData): void {
   const elNotes = makeTextarea();
   elNotes.value = data.notes ?? "";
 
-  const elTwin = makeInput("checkbox") as HTMLInputElement;
-  elTwin.checked = !!(data.properties?.twin);
-  const elMonozygotic = makeInput("checkbox") as HTMLInputElement;
-  elMonozygotic.checked = !!(data.properties?.monozygotic);
-
   const patch = async (patchBody: Record<string, unknown>) => {
     if (!currentId) return;
     try {
@@ -81,29 +75,12 @@ function buildDOM(data: EggData): void {
     }
   };
 
-  const patchProperty = async (key: string, value: unknown) => {
-    if (!currentId) return;
-    try {
-      const d = await callbacks.api<EggData>(`/api/eggs/${currentId}`);
-      const merged = { ...(d.properties ?? {}), [key]: value };
-      await callbacks.api(`/api/eggs/${currentId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ properties: merged }),
-      });
-      await callbacks.onUpdate();
-    } catch (err) {
-      console.error("Egg panel property patch failed:", err);
-    }
-  };
-
   const wireDebounced = (el: HTMLInputElement | HTMLTextAreaElement, fn: () => void) =>
     debouncer.wireDebouncedWithUndo(el, fn, callbacks.onBeforeMutation);
 
   wireDebounced(elDisplayName, () => patch({ display_name: elDisplayName.value }));
   wireDebounced(elNotes, () => patch({ notes: elNotes.value }));
 
-  elTwin.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("twin", elTwin.checked); });
-  elMonozygotic.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("monozygotic", elMonozygotic.checked); });
 
   const eventEditor = buildEventEditor({
     entityType: "egg",
@@ -117,8 +94,6 @@ function buildDOM(data: EggData): void {
     heading("Egg"),
     makeField("Display Name", elDisplayName),
     makeField("Notes", elNotes),
-    makeCheckboxRow("Twin", elTwin),
-    makeCheckboxRow("Monozygotic", elMonozygotic),
     eventEditor,
   );
 }
