@@ -2428,6 +2428,7 @@ function runFind(): void {
 
   findIndex = findResults.length > 0 ? 0 : -1;
   updateFindCount();
+  if (findIndex >= 0) scrollToIndividual(findResults[findIndex]);
   render();
 }
 
@@ -2439,10 +2440,32 @@ function updateFindCount(): void {
   }
 }
 
+function scrollToIndividual(id: string): void {
+  const ind = individuals.find((i) => i.id === id);
+  if (!ind || ind.x == null || ind.y == null) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const margin = 60;
+
+  // World coords of the individual → screen coords
+  const sx = ind.x * zoomScale + panX;
+  const sy = ind.y * zoomScale + panY;
+
+  // Check if off-screen (with margin)
+  if (sx >= margin && sx <= rect.width - margin && sy >= margin && sy <= rect.height - margin) {
+    return; // already visible
+  }
+
+  // Center the individual on screen
+  panX = rect.width / 2 - ind.x * zoomScale;
+  panY = rect.height / 2 - ind.y * zoomScale;
+}
+
 function findNext(): void {
   if (findResults.length === 0) return;
   findIndex = (findIndex + 1) % findResults.length;
   updateFindCount();
+  scrollToIndividual(findResults[findIndex]);
   render();
 }
 
@@ -2450,6 +2473,7 @@ function findPrev(): void {
   if (findResults.length === 0) return;
   findIndex = (findIndex - 1 + findResults.length) % findResults.length;
   updateFindCount();
+  scrollToIndividual(findResults[findIndex]);
   render();
 }
 
@@ -3868,6 +3892,76 @@ canvas.addEventListener("touchmove", (e) => {
 
 // --- File I/O: Save / Load JSON, Export / Import GEDCOM ---
 
+/**
+ * Add entities from an imported file to the current pedigree (merge mode).
+ * Creates new entities via API with fresh IDs, remapping internal references.
+ */
+async function addEntitiesToPedigree(
+  importedInds: Record<string, unknown>[],
+  importedRels: Record<string, unknown>[],
+  importedEggs: Record<string, unknown>[],
+): Promise<void> {
+  const idMap = new Map<string, string>();
+
+  // Create individuals with new IDs
+  for (const ind of importedInds) {
+    const created = await api<{ id: string }>("/api/individuals", {
+      method: "POST",
+      body: JSON.stringify({
+        biological_sex: ind.biological_sex,
+        x: ind.x,
+        y: ind.y,
+        display_name: ind.display_name,
+        notes: ind.notes,
+        properties: ind.properties,
+        name: ind.name,
+        death_status: ind.death_status,
+        affection_status: ind.affection_status,
+        fertility_status: ind.fertility_status,
+      }),
+    });
+    if (ind.id) idMap.set(ind.id as string, created.id);
+    await api(`/api/pedigrees/${pedigreeId}/individuals/${created.id}`, {
+      method: "POST",
+    });
+  }
+
+  // Create relationships with remapped members
+  for (const rel of importedRels) {
+    const members = ((rel.members as string[]) ?? []).map((m) => idMap.get(m) ?? m);
+    const children = ((rel.children as string[]) ?? []).map((c) => idMap.get(c) ?? c);
+    const created = await api<{ id: string }>("/api/relationships", {
+      method: "POST",
+      body: JSON.stringify({
+        members,
+        children,
+        properties: rel.properties,
+      }),
+    });
+    if (rel.id) idMap.set(rel.id as string, created.id);
+    await api(`/api/pedigrees/${pedigreeId}/relationships/${created.id}`, {
+      method: "POST",
+    });
+  }
+
+  // Create eggs with remapped references
+  for (const egg of importedEggs) {
+    const newIndId = egg.individual_id ? idMap.get(egg.individual_id as string) ?? egg.individual_id : null;
+    const newRelId = egg.relationship_id ? idMap.get(egg.relationship_id as string) ?? egg.relationship_id : null;
+    const created = await api<{ id: string }>("/api/eggs", {
+      method: "POST",
+      body: JSON.stringify({
+        individual_id: newIndId,
+        relationship_id: newRelId,
+        properties: egg.properties,
+      }),
+    });
+    await api(`/api/pedigrees/${pedigreeId}/eggs/${created.id}`, {
+      method: "POST",
+    });
+  }
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -3880,7 +3974,38 @@ function downloadBlob(blob: Blob, filename: string) {
 btnSave.addEventListener("click", async () => {
   if (!pedigreeId) return;
   try {
+    const selIds = new Set<string>(selectedIds);
+    if (selectedIndividualId) selIds.add(selectedIndividualId);
+
+    let exportMode: "all" | "selection" = "all";
+    if (selIds.size > 0) {
+      const choice = await showModal("Save Pedigree", "You have individuals selected. What would you like to save?", [
+        { label: "Whole pedigree", value: "all", primary: true },
+        { label: "Selection only", value: "selection" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+      if (choice === "cancel") return;
+      exportMode = choice as "all" | "selection";
+    }
+
     const detail = await api<Record<string, unknown>>(`/api/pedigrees/${pedigreeId}`);
+
+    if (exportMode === "selection") {
+      const inds = (detail.individuals as PlacedIndividual[]).filter((i) => selIds.has(i.id));
+      const rels = (detail.relationships as PlacedRelationship[]).filter((r) =>
+        r.members.every((m) => selIds.has(m)),
+      );
+      const relIds = new Set(rels.map((r) => r.id));
+      const filteredEggs = (detail.eggs as PlacedEgg[]).filter(
+        (e) =>
+          (e.individual_id && selIds.has(e.individual_id)) &&
+          (e.relationship_id && relIds.has(e.relationship_id)),
+      );
+      detail.individuals = inds;
+      detail.relationships = rels;
+      detail.eggs = filteredEggs;
+    }
+
     const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
     downloadBlob(blob, "pedigree.json");
   } catch (err) {
@@ -3899,25 +4024,43 @@ fileJsonInput.addEventListener("change", async () => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
+
+    const choice = await showModal("Load File", "How would you like to load this file?", [
+      { label: "Replace current", value: "replace", primary: true },
+      { label: "Add to pedigree", value: "add" },
+      { label: "Cancel", value: "cancel" },
+    ]);
+    if (choice === "cancel") return;
+
     pushUndo(captureSnapshot("Load file"));
-    await api(`/api/pedigrees/${pedigreeId}/restore`, {
-      method: "PUT",
-      body: JSON.stringify({
-        individuals: data.individuals ?? [],
-        relationships: data.relationships ?? [],
-        eggs: data.eggs ?? [],
-      }),
-    });
-    // Also restore pedigree-level metadata if present
-    const patch: Record<string, unknown> = {};
-    if (data.display_name != null) patch.display_name = data.display_name;
-    if (data.properties != null) patch.properties = data.properties;
-    if (Object.keys(patch).length > 0) {
-      await api(`/api/pedigrees/${pedigreeId}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
+
+    if (choice === "replace") {
+      await api(`/api/pedigrees/${pedigreeId}/restore`, {
+        method: "PUT",
+        body: JSON.stringify({
+          individuals: data.individuals ?? [],
+          relationships: data.relationships ?? [],
+          eggs: data.eggs ?? [],
+        }),
       });
+      // Also restore pedigree-level metadata if present
+      const patch: Record<string, unknown> = {};
+      if (data.display_name != null) patch.display_name = data.display_name;
+      if (data.properties != null) patch.properties = data.properties;
+      if (Object.keys(patch).length > 0) {
+        await api(`/api/pedigrees/${pedigreeId}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+      }
+    } else {
+      await addEntitiesToPedigree(
+        data.individuals ?? [],
+        data.relationships ?? [],
+        data.eggs ?? [],
+      );
     }
+
     await refreshState();
     await autoLayoutUnpositioned();
     render();
@@ -3929,7 +4072,23 @@ fileJsonInput.addEventListener("change", async () => {
 btnExportGed.addEventListener("click", async () => {
   if (!pedigreeId) return;
   try {
-    const resp = await fetch(`/api/pedigrees/${pedigreeId}/export.ged`);
+    const selIds = new Set<string>(selectedIds);
+    if (selectedIndividualId) selIds.add(selectedIndividualId);
+
+    let idsParam = "";
+    if (selIds.size > 0) {
+      const choice = await showModal("Export GEDCOM", "You have individuals selected. What would you like to export?", [
+        { label: "Whole pedigree", value: "all", primary: true },
+        { label: "Selection only", value: "selection" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+      if (choice === "cancel") return;
+      if (choice === "selection") {
+        idsParam = `?ids=${[...selIds].join(",")}`;
+      }
+    }
+
+    const resp = await fetch(`/api/pedigrees/${pedigreeId}/export.ged${idsParam}`);
     if (!resp.ok) throw new Error(`Export failed: ${resp.status}`);
     const blob = await resp.blob();
     downloadBlob(blob, "pedigree.ged");
@@ -3948,11 +4107,34 @@ fileGedInput.addEventListener("change", async () => {
   if (!file || !pedigreeId) return;
   try {
     const content = await file.text();
+
+    const choice = await showModal("Import GEDCOM", "How would you like to import this file?", [
+      { label: "Replace current", value: "replace", primary: true },
+      { label: "Add to pedigree", value: "add" },
+      { label: "Cancel", value: "cancel" },
+    ]);
+    if (choice === "cancel") return;
+
     pushUndo(captureSnapshot("Import GEDCOM"));
-    await api(`/api/pedigrees/${pedigreeId}/import/gedcom`, {
-      method: "POST",
-      body: JSON.stringify({ content }),
-    });
+
+    if (choice === "replace") {
+      await api(`/api/pedigrees/${pedigreeId}/import/gedcom`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+    } else {
+      // Parse on server, then add entities client-side
+      const parsed = await api<{
+        individuals: Record<string, unknown>[];
+        relationships: Record<string, unknown>[];
+        eggs: Record<string, unknown>[];
+      }>(`/api/pedigrees/${pedigreeId}/import/gedcom?mode=parse`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+      await addEntitiesToPedigree(parsed.individuals, parsed.relationships, parsed.eggs);
+    }
+
     await refreshState();
     await autoLayoutUnpositioned();
     render();
@@ -3971,11 +4153,33 @@ fileXegInput.addEventListener("change", async () => {
   if (!file || !pedigreeId) return;
   try {
     const content = await file.text();
+
+    const choice = await showModal("Import XEG", "How would you like to import this file?", [
+      { label: "Replace current", value: "replace", primary: true },
+      { label: "Add to pedigree", value: "add" },
+      { label: "Cancel", value: "cancel" },
+    ]);
+    if (choice === "cancel") return;
+
     pushUndo(captureSnapshot("Import XEG"));
-    await api(`/api/pedigrees/${pedigreeId}/import/xeg`, {
-      method: "POST",
-      body: JSON.stringify({ content }),
-    });
+
+    if (choice === "replace") {
+      await api(`/api/pedigrees/${pedigreeId}/import/xeg`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+    } else {
+      const parsed = await api<{
+        individuals: Record<string, unknown>[];
+        relationships: Record<string, unknown>[];
+        eggs: Record<string, unknown>[];
+      }>(`/api/pedigrees/${pedigreeId}/import/xeg?mode=parse`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+      await addEntitiesToPedigree(parsed.individuals, parsed.relationships, parsed.eggs);
+    }
+
     await refreshState();
     await autoLayoutUnpositioned();
     render();

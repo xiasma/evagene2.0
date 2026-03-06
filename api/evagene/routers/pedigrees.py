@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..gedcom import parse_gedcom, serialize_gedcom
 from ..models import Event, EventCreate, GedcomImportBody, Pedigree, PedigreeCreate, PedigreeDetail, PedigreeRestoreBody, PedigreeUpdate, XegImportBody
@@ -113,14 +114,31 @@ def add_egg_to_pedigree(pedigree_id: uuid.UUID, egg_id: uuid.UUID):
 
 
 @router.get("/{pedigree_id}/export.ged")
-def export_gedcom(pedigree_id: uuid.UUID):
+def export_gedcom(
+    pedigree_id: uuid.UUID,
+    ids: Optional[str] = Query(None, description="Comma-separated individual UUIDs to export (subset)"),
+):
     detail = store.get_pedigree_detail(pedigree_id)
     if detail is None:
         raise HTTPException(404, "Pedigree not found")
+
+    inds = detail.individuals
+    rels = detail.relationships
+    egg_list = detail.eggs
+
+    if ids:
+        id_set = {uuid.UUID(i.strip()) for i in ids.split(",") if i.strip()}
+        inds = [i for i in inds if i.id in id_set]
+        rels = [r for r in rels if any(m in id_set for m in r.members)]
+        rel_ids = {r.id for r in rels}
+        egg_list = [
+            e for e in egg_list
+            if (e.individual_id and e.individual_id in id_set)
+            and (e.relationship_id and e.relationship_id in rel_ids)
+        ]
+
     text = serialize_gedcom(
-        detail.individuals,
-        detail.relationships,
-        detail.eggs,
+        inds, rels, egg_list,
         pedigree_name=detail.display_name,
     )
     return PlainTextResponse(
@@ -131,18 +149,38 @@ def export_gedcom(pedigree_id: uuid.UUID):
 
 
 @router.post("/{pedigree_id}/import/gedcom", status_code=204)
-def import_gedcom(pedigree_id: uuid.UUID, body: GedcomImportBody):
+def import_gedcom(
+    pedigree_id: uuid.UUID,
+    body: GedcomImportBody,
+    mode: Optional[str] = Query(None, description="Set to 'parse' to return parsed entities without replacing"),
+):
     if store.get_pedigree(pedigree_id) is None:
         raise HTTPException(404, "Pedigree not found")
     individuals, relationships, eggs = parse_gedcom(body.content)
+    if mode == "parse":
+        return JSONResponse({
+            "individuals": [i.model_dump(mode="json") for i in individuals],
+            "relationships": [r.model_dump(mode="json") for r in relationships],
+            "eggs": [e.model_dump(mode="json") for e in eggs],
+        })
     store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
 
 
 @router.post("/{pedigree_id}/import/xeg", status_code=204)
-def import_xeg(pedigree_id: uuid.UUID, body: XegImportBody):
+def import_xeg(
+    pedigree_id: uuid.UUID,
+    body: XegImportBody,
+    mode: Optional[str] = Query(None, description="Set to 'parse' to return parsed entities without replacing"),
+):
     if store.get_pedigree(pedigree_id) is None:
         raise HTTPException(404, "Pedigree not found")
     individuals, relationships, eggs = parse_xeg(body.content)
+    if mode == "parse":
+        return JSONResponse({
+            "individuals": [i.model_dump(mode="json") for i in individuals],
+            "relationships": [r.model_dump(mode="json") for r in relationships],
+            "eggs": [e.model_dump(mode="json") for e in eggs],
+        })
     store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
 
 
