@@ -346,35 +346,68 @@ function buildDOM(data: IndividualData): void {
     }
   };
 
+  // Build undo label helper
+  const name = () => data.display_name || "individual";
+  const labelFor = (field: string, from?: string, to?: string) => {
+    if (from != null && to != null) return `Set ${field} on ${name()} from ${from} to ${to}`;
+    return `Edit ${field} on ${name()}`;
+  };
+  const findOptionLabel = (options: string[][], value: string) =>
+    options.find(([v]) => v === value)?.[1] ?? value;
+
   // Wire immediate events
-  elSex.addEventListener("change", () => { callbacks.onBeforeMutation(); patchDirect({ biological_sex: elSex.value }); });
-  elMortality.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("death_status", elMortality.value); });
-  elAffection.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("affection_status", elAffection.value); });
-  elFertility.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("fertility_status", elFertility.value); });
-  elProband.addEventListener("input", () => { callbacks.onBeforeMutation(); patchDirect({ proband: parseFloat(elProband.value) }); });
-  elShowNotes.addEventListener("change", () => { callbacks.onBeforeMutation(); patchProperty("show_notes", elShowNotes.checked); });
+  elSex.addEventListener("change", () => {
+    const from = findOptionLabel(SEX_OPTIONS, data.biological_sex ?? "unknown");
+    const to = findOptionLabel(SEX_OPTIONS, elSex.value);
+    callbacks.onBeforeMutation(labelFor("Sex", from, to));
+    data.biological_sex = elSex.value;
+    patchDirect({ biological_sex: elSex.value });
+  });
+  elMortality.addEventListener("change", () => {
+    const from = findOptionLabel(DEATH_OPTIONS, (data.properties?.death_status as string) ?? "alive");
+    const to = findOptionLabel(DEATH_OPTIONS, elMortality.value);
+    callbacks.onBeforeMutation(labelFor("Mortality", from, to));
+    data.properties.death_status = elMortality.value;
+    patchProperty("death_status", elMortality.value);
+  });
+  elAffection.addEventListener("change", () => {
+    const from = findOptionLabel(AFFECTION_OPTIONS, (data.properties?.affection_status as string) ?? "unknown");
+    const to = findOptionLabel(AFFECTION_OPTIONS, elAffection.value);
+    callbacks.onBeforeMutation(labelFor("Affection", from, to));
+    data.properties.affection_status = elAffection.value;
+    patchProperty("affection_status", elAffection.value);
+  });
+  elFertility.addEventListener("change", () => {
+    const from = findOptionLabel(FERTILITY_OPTIONS, (data.properties?.fertility_status as string) ?? "unknown");
+    const to = findOptionLabel(FERTILITY_OPTIONS, elFertility.value);
+    callbacks.onBeforeMutation(labelFor("Fertility", from, to));
+    data.properties.fertility_status = elFertility.value;
+    patchProperty("fertility_status", elFertility.value);
+  });
+  elProband.addEventListener("input", () => { callbacks.onBeforeMutation(`Edit Proband on ${name()}`); patchDirect({ proband: parseFloat(elProband.value) }); });
+  elShowNotes.addEventListener("change", () => { callbacks.onBeforeMutation(`Toggle notes on ${name()}`); patchProperty("show_notes", elShowNotes.checked); });
 
   // Wire debounced events
-  const wireDebounced = (el: HTMLInputElement | HTMLTextAreaElement, fn: () => void) =>
-    debouncer.wireDebouncedWithUndo(el, fn, callbacks.onBeforeMutation);
+  const wireDebounced = (el: HTMLInputElement | HTMLTextAreaElement, fn: () => void, label?: string) =>
+    debouncer.wireDebouncedWithUndo(el, fn, () => callbacks.onBeforeMutation(label ?? `Edit ${name()}`));
 
-  wireDebounced(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }));
-  wireDebounced(elGivenNames, () => patchDirect({ name: buildName() }));
-  wireDebounced(elSurname, () => patchDirect({ name: buildName() }));
-  wireDebounced(elTitle, () => patchDirect({ name: buildName() }));
-  wireDebounced(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value));
-  wireDebounced(elProbandText, () => patchDirect({ proband_text: elProbandText.value }));
+  wireDebounced(elDisplayName, () => patchDirect({ display_name: elDisplayName.value }), `Rename ${name()}`);
+  wireDebounced(elGivenNames, () => patchDirect({ name: buildName() }), `Edit name on ${name()}`);
+  wireDebounced(elSurname, () => patchDirect({ name: buildName() }), `Edit surname on ${name()}`);
+  wireDebounced(elTitle, () => patchDirect({ name: buildName() }), `Edit title on ${name()}`);
+  wireDebounced(elSurnameAtBirth, () => patchProperty("surname_at_birth", elSurnameAtBirth.value), `Edit birth surname on ${name()}`);
+  wireDebounced(elProbandText, () => patchDirect({ proband_text: elProbandText.value }), `Edit proband label on ${name()}`);
   wireDebounced(elGeneration, () => {
     const val = elGeneration.value === "" ? null : parseInt(elGeneration.value, 10);
     patchDirect({ generation: val });
-  });
-  wireDebounced(elDob, () => patchProperty("date_of_birth", elDob.value));
-  wireDebounced(elDod, () => handleDateOfDeath(elDod.value));
-  wireDebounced(elNotes, () => patchDirect({ notes: elNotes.value }));
-  wireDebounced(elTelHome, () => patchContact());
-  wireDebounced(elTelWork, () => patchContact());
-  wireDebounced(elTelMobile, () => patchContact());
-  wireDebounced(elEmail, () => patchContact());
+  }, `Edit generation on ${name()}`);
+  wireDebounced(elDob, () => patchProperty("date_of_birth", elDob.value), `Edit date of birth on ${name()}`);
+  wireDebounced(elDod, () => handleDateOfDeath(elDod.value), `Edit date of death on ${name()}`);
+  wireDebounced(elNotes, () => patchDirect({ notes: elNotes.value }), `Edit notes on ${name()}`);
+  wireDebounced(elTelHome, () => patchContact(), `Edit contact on ${name()}`);
+  wireDebounced(elTelWork, () => patchContact(), `Edit contact on ${name()}`);
+  wireDebounced(elTelMobile, () => patchContact(), `Edit contact on ${name()}`);
+  wireDebounced(elEmail, () => patchContact(), `Edit contact on ${name()}`);
 
   // Events section
   const eventEditor = buildEventEditor({
@@ -400,23 +433,22 @@ function buildDOM(data: IndividualData): void {
     const dot = document.createElement("span");
     dot.className = "disease-dot";
     dot.style.background = cat?.color || "#999";
-    const name = document.createElement("span");
-    name.textContent = cat?.display_name || entry.disease_id;
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = cat?.display_name || entry.disease_id;
     const removeBtn = document.createElement("button");
     removeBtn.className = "badge-remove";
     removeBtn.textContent = "\u00d7";
     removeBtn.addEventListener("click", async () => {
-      callbacks.onBeforeMutation();
+      callbacks.onBeforeMutation(`Remove ${cat?.display_name || "disease"} from ${name()}`);
       try {
         await callbacks.api(`/api/individuals/${data.id}/diseases/${entry.disease_id}`, { method: "DELETE" });
         await callbacks.onUpdate();
-        // Refresh panel
         if (currentId) openPanel(currentId);
       } catch (err) {
         console.error("Failed to remove disease:", err);
       }
     });
-    badge.append(dot, name, removeBtn);
+    badge.append(dot, nameSpan, removeBtn);
     diseaseBadges.append(badge);
   }
   diseasesSection.append(diseaseBadges);
@@ -430,7 +462,8 @@ function buildDOM(data: IndividualData): void {
     ]);
     addDiseaseSel.addEventListener("change", async () => {
       if (!addDiseaseSel.value) return;
-      callbacks.onBeforeMutation();
+      const diseaseName = unassignedDiseases.find((d) => d.id === addDiseaseSel.value)?.display_name || "disease";
+      callbacks.onBeforeMutation(`Add ${diseaseName} to ${name()}`);
       try {
         await callbacks.api(`/api/individuals/${data.id}/diseases`, {
           method: "POST",
@@ -455,12 +488,13 @@ function buildDOM(data: IndividualData): void {
 
   for (const entry of data.markers ?? []) {
     const cat = markerCatalog.find((m) => m.id === entry.marker_id);
+    const markerName = cat?.display_name || entry.marker_id;
     const badge = document.createElement("div");
     badge.className = "resource-badge marker-badge";
 
-    const name = document.createElement("span");
-    name.className = "marker-badge-name";
-    name.textContent = cat?.display_name || entry.marker_id;
+    const nameSpan2 = document.createElement("span");
+    nameSpan2.className = "marker-badge-name";
+    nameSpan2.textContent = markerName;
 
     // Inline editable alleles
     const allele1 = makeInput();
@@ -468,7 +502,7 @@ function buildDOM(data: IndividualData): void {
     allele1.value = entry.allele_1;
     allele1.placeholder = "A1";
     allele1.addEventListener("change", () => {
-      callbacks.onBeforeMutation();
+      callbacks.onBeforeMutation(`Edit allele on ${name()}`);
       callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
         method: "PATCH",
         body: JSON.stringify({ allele_1: allele1.value }),
@@ -480,7 +514,7 @@ function buildDOM(data: IndividualData): void {
     allele2.value = entry.allele_2;
     allele2.placeholder = "A2";
     allele2.addEventListener("change", () => {
-      callbacks.onBeforeMutation();
+      callbacks.onBeforeMutation(`Edit allele on ${name()}`);
       callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
         method: "PATCH",
         body: JSON.stringify({ allele_2: allele2.value }),
@@ -492,7 +526,7 @@ function buildDOM(data: IndividualData): void {
     zyg.value = entry.zygosity;
     zyg.placeholder = "Zyg";
     zyg.addEventListener("change", () => {
-      callbacks.onBeforeMutation();
+      callbacks.onBeforeMutation(`Edit zygosity on ${name()}`);
       callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, {
         method: "PATCH",
         body: JSON.stringify({ zygosity: zyg.value }),
@@ -503,7 +537,7 @@ function buildDOM(data: IndividualData): void {
     removeBtn.className = "badge-remove";
     removeBtn.textContent = "\u00d7";
     removeBtn.addEventListener("click", async () => {
-      callbacks.onBeforeMutation();
+      callbacks.onBeforeMutation(`Remove ${markerName} from ${name()}`);
       try {
         await callbacks.api(`/api/individuals/${data.id}/markers/${entry.marker_id}`, { method: "DELETE" });
         await callbacks.onUpdate();
@@ -513,7 +547,7 @@ function buildDOM(data: IndividualData): void {
       }
     });
 
-    badge.append(name, allele1, allele2, zyg, removeBtn);
+    badge.append(nameSpan2, allele1, allele2, zyg, removeBtn);
     markerBadges.append(badge);
   }
   markersSection.append(markerBadges);
@@ -527,7 +561,8 @@ function buildDOM(data: IndividualData): void {
     ]);
     addMarkerSel.addEventListener("change", async () => {
       if (!addMarkerSel.value) return;
-      callbacks.onBeforeMutation();
+      const mkName = unassignedMarkers.find((m) => m.id === addMarkerSel.value)?.display_name || "marker";
+      callbacks.onBeforeMutation(`Add ${mkName} to ${name()}`);
       try {
         await callbacks.api(`/api/individuals/${data.id}/markers`, {
           method: "POST",

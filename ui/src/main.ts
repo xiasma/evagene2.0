@@ -190,6 +190,7 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
 // Drag state
 let dragging = false;
 let groupDragOffsets: Map<string, { dx: number; dy: number }> = new Map();
+let preDragSnapshot: Snapshot | null = null;
 
 // Selection state (lasso)
 let selectedIds: Set<string> = new Set();
@@ -279,6 +280,7 @@ function snapXY(x: number, y: number): { x: number; y: number } {
 
 // --- Undo/Redo state ---
 interface Snapshot {
+  label: string;
   individuals: PlacedIndividual[];
   relationships: PlacedRelationship[];
   eggs: PlacedEgg[];
@@ -288,8 +290,9 @@ const UNDO_LIMIT = 50;
 const undoStack: Snapshot[] = [];
 const redoStack: Snapshot[] = [];
 
-function captureSnapshot(): Snapshot {
+function captureSnapshot(label = "Edit"): Snapshot {
   return {
+    label,
     individuals: JSON.parse(JSON.stringify(individuals)),
     relationships: JSON.parse(JSON.stringify(relationships)),
     eggs: JSON.parse(JSON.stringify(eggs)),
@@ -300,6 +303,18 @@ function pushUndo(snap: Snapshot): void {
   undoStack.push(snap);
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
   redoStack.length = 0;
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons(): void {
+  btnUndo.disabled = undoStack.length === 0;
+  btnRedo.disabled = redoStack.length === 0;
+  btnUndo.title = undoStack.length > 0
+    ? `Undo: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)`
+    : "Nothing to undo";
+  btnRedo.title = redoStack.length > 0
+    ? `Redo: ${redoStack[redoStack.length - 1].label} (Ctrl+Y)`
+    : "Nothing to redo";
 }
 
 // --- Clipboard state ---
@@ -328,6 +343,10 @@ let noteDragOffset = { dx: 0, dy: 0 };
 // --- Note drag (per-individual on-canvas notes) ---
 let draggingIndNoteId: string | null = null;
 let indNoteDragOffset = { dx: 0, dy: 0 };
+
+// Display name label drag state
+let draggingLabelId: string | null = null;
+let labelDragOffset = { dx: 0, dy: 0 };
 
 // --- Zoom / Pan state ---
 let zoomScale = 1;
@@ -407,8 +426,8 @@ const panelCallbacks: PanelCallbacks = {
     render();
   },
   api,
-  onBeforeMutation: () => {
-    pushUndo(captureSnapshot());
+  onBeforeMutation: (label?: string) => {
+    pushUndo(captureSnapshot(label ?? "Edit properties"));
   },
 };
 
@@ -1000,6 +1019,35 @@ function hitIndividualNote(pos: Point): PlacedIndividual | null {
   return null;
 }
 
+// --- Display name label hit-test ---
+
+const LABEL_FONT_SIZE = 11;
+const LABEL_CHAR_WIDTH = 6.5; // approximate at 11px
+const LABEL_LINE_HEIGHT = 14;
+const LABEL_DEFAULT_OFFSET_Y = SHAPE_SIZE / 2 + 6;
+
+function getDisplayNameBounds(ind: PlacedIndividual): { x: number; y: number; w: number; h: number } | null {
+  if (!ind.display_name || ind.x == null || ind.y == null) return null;
+  const offsetX = (ind.properties?.display_name_offset_x as number) ?? 0;
+  const offsetY = (ind.properties?.display_name_offset_y as number) ?? LABEL_DEFAULT_OFFSET_Y;
+  const w = ind.display_name.length * LABEL_CHAR_WIDTH;
+  const h = LABEL_LINE_HEIGHT;
+  const x = ind.x + offsetX - w / 2;
+  const y = ind.y + offsetY;
+  return { x, y, w, h };
+}
+
+function hitDisplayNameLabel(pos: Point): PlacedIndividual | null {
+  for (const ind of individuals) {
+    const b = getDisplayNameBounds(ind);
+    if (!b) continue;
+    if (pos.x >= b.x - 2 && pos.x <= b.x + b.w + 2 && pos.y >= b.y - 2 && pos.y <= b.y + b.h + 2) {
+      return ind;
+    }
+  }
+  return null;
+}
+
 // --- Drawing handlers ---
 
 function beginStroke(pos: Point) {
@@ -1053,6 +1101,16 @@ canvas.addEventListener("pointerdown", (e) => {
     const offsetX = (indNoteHit.properties.note_offset_x as number) ?? 0;
     const offsetY = (indNoteHit.properties.note_offset_y as number) ?? SHAPE_SIZE;
     indNoteDragOffset = { dx: (indNoteHit.x + offsetX) - pos.x, dy: (indNoteHit.y + offsetY) - pos.y };
+    return;
+  }
+
+  // Priority 0c: Display name label drag
+  const labelHit = hitDisplayNameLabel(pos);
+  if (labelHit) {
+    draggingLabelId = labelHit.id;
+    const offsetX = (labelHit.properties?.display_name_offset_x as number) ?? 0;
+    const offsetY = (labelHit.properties?.display_name_offset_y as number) ?? LABEL_DEFAULT_OFFSET_Y;
+    labelDragOffset = { dx: (labelHit.x + offsetX) - pos.x, dy: (labelHit.y + offsetY) - pos.y };
     return;
   }
 
@@ -1140,6 +1198,10 @@ canvas.addEventListener("pointerdown", (e) => {
     clickHitId = hit.id;
     hoveredElement = null;
     dragging = true;
+    const moveLabel = selectedIds.size === 1
+      ? `Move ${individuals.find((i) => selectedIds.has(i.id))?.display_name || "individual"}`
+      : `Move ${selectedIds.size} individuals`;
+    preDragSnapshot = captureSnapshot(moveLabel);
     groupDragOffsets = new Map();
     for (const id of selectedIds) {
       const ind = individuals.find((i) => i.id === id);
@@ -1154,6 +1216,7 @@ canvas.addEventListener("pointerdown", (e) => {
     selectedElement = null;
     selectedNoteId = null;
     dragging = true;
+    preDragSnapshot = captureSnapshot(`Move ${hit.display_name || "individual"}`);
     groupDragOffsets = new Map();
     groupDragOffsets.set(hit.id, { dx: hit.x - pos.x, dy: hit.y - pos.y });
     render();
@@ -1201,6 +1264,17 @@ canvas.addEventListener("pointermove", (e) => {
     if (ind && ind.x != null && ind.y != null) {
       ind.properties.note_offset_x = (pos.x + indNoteDragOffset.dx) - ind.x;
       ind.properties.note_offset_y = (pos.y + indNoteDragOffset.dy) - ind.y;
+      render();
+    }
+    return;
+  }
+
+  // Display name label drag
+  if (draggingLabelId) {
+    const ind = individuals.find((i) => i.id === draggingLabelId);
+    if (ind && ind.x != null && ind.y != null) {
+      ind.properties.display_name_offset_x = (pos.x + labelDragOffset.dx) - ind.x;
+      ind.properties.display_name_offset_y = (pos.y + labelDragOffset.dy) - ind.y;
       render();
     }
     return;
@@ -1276,6 +1350,19 @@ canvas.addEventListener("pointerup", () => {
     return;
   }
 
+  // Display name label drag end
+  if (draggingLabelId) {
+    const ind = individuals.find((i) => i.id === draggingLabelId);
+    draggingLabelId = null;
+    if (ind) {
+      api(`/api/individuals/${ind.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ properties: ind.properties }),
+      });
+    }
+    return;
+  }
+
   // Bar / apex drag end
   if (draggingBar || draggingApex) {
     draggingBar = false;
@@ -1291,6 +1378,7 @@ canvas.addEventListener("pointerup", () => {
     selectedElement = { kind: "individual", id };
     selectedNoteId = null;
     dragging = false;
+    preDragSnapshot = null;
     groupDragOffsets = new Map();
     drawing = false;
     render();
@@ -1314,9 +1402,12 @@ canvas.addEventListener("pointerup", () => {
     }
     dragging = false;
     groupDragOffsets = new Map();
-    if (movedIndividuals.length > 0) {
-      pushUndo(captureSnapshot());
+    if (movedIndividuals.length > 0 && preDragSnapshot) {
+      pushUndo(preDragSnapshot);
+      preDragSnapshot = null;
       handleGroupDragEnd(movedIndividuals);
+    } else {
+      preDragSnapshot = null;
     }
     return;
   }
@@ -1380,7 +1471,7 @@ canvas.addEventListener("pointerup", () => {
         const child = hitIndividual(endpoint);
         if (child) {
           render();
-          pushUndo(captureSnapshot());
+          pushUndo(captureSnapshot("Add child"));
           handleParentalLineFromRelationship(source.relId, child.id);
         } else {
           // Check if endpoint hits another relationship's parental structure or marriage line
@@ -1388,8 +1479,7 @@ canvas.addEventListener("pointerup", () => {
           const targetMarriage = hitRelationshipLine(endpoint);
           if (targetParental && targetParental.id !== source.relId) {
             render();
-            pushUndo(captureSnapshot());
-            const sourceRel = relationships.find((r) => r.id === source.relId);
+            pushUndo(captureSnapshot("Merge relationships"));
             const targetRel = relationships.find((r) => r.id === targetParental.id);
             // Merge into whichever relationship has members (parents)
             if (targetRel && targetRel.members.length > 0) {
@@ -1399,8 +1489,7 @@ canvas.addEventListener("pointerup", () => {
             }
           } else if (targetMarriage && targetMarriage.id !== source.relId) {
             render();
-            pushUndo(captureSnapshot());
-            const sourceRel = relationships.find((r) => r.id === source.relId);
+            pushUndo(captureSnapshot("Merge relationships"));
             const targetRel = relationships.find((r) => r.id === targetMarriage.id);
             if (targetRel && targetRel.members.length > 0) {
               handleMergeRelationships(targetMarriage.id, source.relId);
@@ -1415,7 +1504,7 @@ canvas.addEventListener("pointerup", () => {
         const child = hitIndividual(endpoint);
         if (child && child.id !== source.indId) {
           render();
-          pushUndo(captureSnapshot());
+          pushUndo(captureSnapshot("Add child"));
           handleParentalLineFromIndividual(source.indId, child.id);
         } else {
           rejectStroke(points);
@@ -1428,14 +1517,14 @@ canvas.addEventListener("pointerup", () => {
           const isChevron = detectChevron(points);
           console.log("[TWIN] isChevron:", isChevron, "indA:", source.indId, "indB:", topTarget.id);
           render();
-          pushUndo(captureSnapshot());
+          pushUndo(captureSnapshot("Connect siblings"));
           handleSiblingConnection(source.indId, topTarget.id, isChevron);
         } else {
           // Reverse: child → relationship line
           const relTarget = hitRelationshipLine(endpoint);
           if (relTarget) {
             render();
-            pushUndo(captureSnapshot());
+            pushUndo(captureSnapshot("Add child"));
             handleParentalLineFromRelationship(relTarget.id, source.indId);
           } else {
             rejectStroke(points);
@@ -1456,7 +1545,7 @@ canvas.addEventListener("pointerup", () => {
       const endpoint = points[points.length - 1];
       const target = hitSide(endpoint);
       if (target && sourceId && target.id !== sourceId && !hasRelationship(sourceId, target.id)) {
-        pushUndo(captureSnapshot());
+        pushUndo(captureSnapshot("Connect partners"));
         handleConnectionEnd(sourceId, target.id);
       } else {
         rejectStroke(points);
@@ -1545,7 +1634,7 @@ canvas.addEventListener("pointerup", () => {
   // Immediately clear freehand stroke and show perfect shape
   render();
 
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot("Add individual"));
   handleShapePlaced(sex, snapped.x, snapped.y);
 });
 
@@ -1990,7 +2079,11 @@ async function handleSiblingConnection(
 
 async function deleteIndividuals(ids: string[]) {
   if (!pedigreeId || ids.length === 0) return;
-  pushUndo(captureSnapshot());
+  const names = ids.map((id) => individuals.find((i) => i.id === id)?.display_name).filter(Boolean);
+  const deleteLabel = names.length === 1 && names[0]
+    ? `Delete ${names[0]}`
+    : ids.length === 1 ? "Delete individual" : `Delete ${ids.length} individuals`;
+  pushUndo(captureSnapshot(deleteLabel));
   try {
     for (const id of ids) {
       // 1. Delete eggs where this individual is the child
@@ -2042,7 +2135,7 @@ async function deleteIndividuals(ids: string[]) {
 async function deleteSelectedElement(sel: HitElement) {
   if (!sel || !pedigreeId) return;
   if (sel.kind === "individual" || sel.kind === "note") return; // handled elsewhere
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot("Delete connection"));
   try {
     switch (sel.kind) {
       case "marriage":
@@ -2144,7 +2237,7 @@ async function deleteTwinLine(eggId: string, relId: string) {
 async function undo() {
   if (undoStack.length === 0 || !pedigreeId) return;
   const snap = undoStack.pop()!;
-  redoStack.push(captureSnapshot());
+  redoStack.push(captureSnapshot(snap.label));
   try {
     await api(`/api/pedigrees/${pedigreeId}/restore`, {
       method: "PUT",
@@ -2156,6 +2249,8 @@ async function undo() {
     });
     await refreshState();
     render();
+    updateUndoRedoButtons();
+    refreshOpenPanel();
   } catch (err) {
     console.error("Undo failed:", err);
   }
@@ -2164,7 +2259,7 @@ async function undo() {
 async function redo() {
   if (redoStack.length === 0 || !pedigreeId) return;
   const snap = redoStack.pop()!;
-  undoStack.push(captureSnapshot());
+  undoStack.push(captureSnapshot(snap.label));
   try {
     await api(`/api/pedigrees/${pedigreeId}/restore`, {
       method: "PUT",
@@ -2176,9 +2271,18 @@ async function redo() {
     });
     await refreshState();
     render();
+    updateUndoRedoButtons();
+    refreshOpenPanel();
   } catch (err) {
     console.error("Redo failed:", err);
   }
+}
+
+/** Re-open the active panel so it reflects current data after undo/redo. */
+function refreshOpenPanel(): void {
+  if (!activePanelTarget) return;
+  // Re-open with same target — panel fetches fresh data from API
+  openPanelFor(activePanelTarget);
 }
 
 // --- Clipboard ---
@@ -2214,7 +2318,7 @@ function copySelection(): void {
 
 async function paste(): Promise<void> {
   if (!clipboard || !pedigreeId) return;
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot("Paste"));
 
   const idMap = new Map<string, string>();
 
@@ -2372,7 +2476,7 @@ function generateNoteId(): string {
 
 function addFloatingNote(): void {
   if (!pedigreeId) return;
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot("Add note"));
   const rect = canvas.getBoundingClientRect();
   const note: FloatingNote = {
     id: generateNoteId(),
@@ -2389,7 +2493,7 @@ function addFloatingNote(): void {
 
 function deleteSelectedNote(): void {
   if (!selectedNoteId) return;
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot("Delete note"));
   floatingNotes = floatingNotes.filter((n) => n.id !== selectedNoteId);
   selectedNoteId = null;
   patchFloatingNotes();
@@ -2591,7 +2695,7 @@ function tryDiagonalStroke(pts: Point[]): boolean {
 
   if (currentStatus === "alive" || currentStatus === "unknown") {
     render();
-    pushUndo(captureSnapshot());
+    pushUndo(captureSnapshot(`Set ${hitInd.display_name || "individual"} deceased`));
     handleSetDeathStatus(hitInd.id, "dead");
     return true;
   }
@@ -2600,7 +2704,7 @@ function tryDiagonalStroke(pts: Point[]): boolean {
     const isSameSign = (dx > 0 && dy > 0) || (dx < 0 && dy < 0);
     if (isSameSign) {
       render();
-      pushUndo(captureSnapshot());
+      pushUndo(captureSnapshot(`Set ${hitInd.display_name || "individual"} suicide`));
       handleSetDeathStatus(hitInd.id, "suicide_confirmed");
       return true;
     }
@@ -2676,7 +2780,7 @@ function tryDiagonalStrokeRelationship(pts: Point[]): boolean {
   ) ?? false;
 
   render();
-  pushUndo(captureSnapshot());
+  pushUndo(captureSnapshot(hasSeparation ? "Divorce" : "Separation"));
 
   if (hasSeparation) {
     handleRelationshipDiagonal(hitRel.id, "divorce");
@@ -2830,7 +2934,7 @@ function tryMarkMonozygotic(pts: Point[]): boolean {
     }
 
     if (hitCount >= Math.min(pts.length * 0.3, 5)) {
-      pushUndo(captureSnapshot());
+      pushUndo(captureSnapshot("Mark monozygotic"));
       handleMarkMonozygotic(twinEggs);
       return true;
     }
@@ -3407,6 +3511,18 @@ function render() {
     drawIndividual(ctx, x, y, SHAPE_SIZE, spec, isSelected, symbolColors);
   }
 
+  // Draw display name labels
+  for (const ind of individuals) {
+    const b = getDisplayNameBounds(ind);
+    if (!b) continue;
+    ctx.fillStyle = strokeColor;
+    ctx.font = getCanvasFontWithSize(LABEL_FONT_SIZE);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const cx = b.x + b.w / 2;
+    ctx.fillText(ind.display_name, cx, b.y);
+  }
+
   // Draw individual on-canvas notes
   for (const ind of individuals) {
     if (ind.x == null || ind.y == null) continue;
@@ -3533,6 +3649,67 @@ function showToast(shape: Shape) {
 
 btnUndo.addEventListener("click", undo);
 btnRedo.addEventListener("click", redo);
+updateUndoRedoButtons();
+
+// Long-press on undo/redo shows history popup
+let undoLongPressTimer: ReturnType<typeof setTimeout> | undefined;
+let redoLongPressTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showHistoryPopup(stack: Snapshot[], button: HTMLButtonElement, direction: "undo" | "redo"): void {
+  // Remove any existing popup
+  document.querySelectorAll(".undo-history-popup").forEach((el) => el.remove());
+  if (stack.length === 0) return;
+
+  const popup = document.createElement("div");
+  popup.className = "undo-history-popup";
+  const rect = button.getBoundingClientRect();
+  popup.style.left = `${rect.left}px`;
+  popup.style.top = `${rect.bottom + 4}px`;
+
+  // Show from most recent to oldest (max 15)
+  const items = stack.slice(-15).reverse();
+  for (let i = 0; i < items.length; i++) {
+    const item = document.createElement("button");
+    item.className = "undo-history-item";
+    item.textContent = items[i].label;
+    const stepsBack = i + 1;
+    item.addEventListener("click", async () => {
+      popup.remove();
+      for (let s = 0; s < stepsBack; s++) {
+        if (direction === "undo") await undo();
+        else await redo();
+      }
+    });
+    popup.append(item);
+  }
+
+  document.body.append(popup);
+
+  // Close on any outside click
+  const close = (e: MouseEvent) => {
+    if (!popup.contains(e.target as Node)) {
+      popup.remove();
+      document.removeEventListener("click", close, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", close, true), 0);
+}
+
+btnUndo.addEventListener("pointerdown", () => {
+  undoLongPressTimer = setTimeout(() => {
+    showHistoryPopup(undoStack, btnUndo, "undo");
+  }, 500);
+});
+btnUndo.addEventListener("pointerup", () => clearTimeout(undoLongPressTimer));
+btnUndo.addEventListener("pointerleave", () => clearTimeout(undoLongPressTimer));
+
+btnRedo.addEventListener("pointerdown", () => {
+  redoLongPressTimer = setTimeout(() => {
+    showHistoryPopup(redoStack, btnRedo, "redo");
+  }, 500);
+});
+btnRedo.addEventListener("pointerup", () => clearTimeout(redoLongPressTimer));
+btnRedo.addEventListener("pointerleave", () => clearTimeout(redoLongPressTimer));
 btnGrid.addEventListener("click", () => {
   snapToGrid = !snapToGrid;
   btnGrid.classList.toggle("active", snapToGrid);
@@ -3722,7 +3899,7 @@ fileJsonInput.addEventListener("change", async () => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    pushUndo(captureSnapshot());
+    pushUndo(captureSnapshot("Load file"));
     await api(`/api/pedigrees/${pedigreeId}/restore`, {
       method: "PUT",
       body: JSON.stringify({
@@ -3771,7 +3948,7 @@ fileGedInput.addEventListener("change", async () => {
   if (!file || !pedigreeId) return;
   try {
     const content = await file.text();
-    pushUndo(captureSnapshot());
+    pushUndo(captureSnapshot("Import GEDCOM"));
     await api(`/api/pedigrees/${pedigreeId}/import/gedcom`, {
       method: "POST",
       body: JSON.stringify({ content }),
@@ -3794,7 +3971,7 @@ fileXegInput.addEventListener("change", async () => {
   if (!file || !pedigreeId) return;
   try {
     const content = await file.text();
-    pushUndo(captureSnapshot());
+    pushUndo(captureSnapshot("Import XEG"));
     await api(`/api/pedigrees/${pedigreeId}/import/xeg`, {
       method: "POST",
       body: JSON.stringify({ content }),

@@ -4,7 +4,7 @@ export interface PanelCallbacks {
   onUpdate: () => Promise<void>;
   onClose: () => void;
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
-  onBeforeMutation: () => void;
+  onBeforeMutation: (label?: string) => void;
 }
 
 // --- DOM builders ---
@@ -67,7 +67,7 @@ export class DebouncerGroup {
   wireDebouncedWithUndo(
     el: HTMLInputElement | HTMLTextAreaElement,
     fn: () => void,
-    onBeforeMutation: () => void,
+    onBeforeMutation: (() => void) | ((label?: string) => void),
     delay = 500,
   ): void {
     const key = `debounce-${this.counter++}`;

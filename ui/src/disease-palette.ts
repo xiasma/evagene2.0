@@ -112,7 +112,8 @@ async function toggleDisease(disease: DiseaseInfo): Promise<void> {
     context.getIndividualDiseases(id).includes(disease.id)
   );
 
-  callbacks.onBeforeMutation();
+  const action = allHave ? "Remove" : "Add";
+  callbacks.onBeforeMutation(`${action} ${disease.display_name || "disease"}`);
 
   try {
     if (allHave) {
