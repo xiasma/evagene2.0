@@ -73,6 +73,7 @@ let currentId: string | null = null;
 let debouncer = new DebouncerGroup();
 let diseaseCatalog: CatalogDisease[] = [];
 let markerCatalog: CatalogMarker[] = [];
+let displayNameInput: HTMLInputElement | null = null;
 
 // --- Dropdown option lists ---
 
@@ -179,6 +180,13 @@ export function isPanelOpen(): boolean {
   return currentId !== null;
 }
 
+export function focusDisplayName(): void {
+  if (displayNameInput) {
+    displayNameInput.focus();
+    displayNameInput.select();
+  }
+}
+
 // --- Build DOM from scratch each time ---
 
 function buildDOM(data: IndividualData): void {
@@ -193,6 +201,7 @@ function buildDOM(data: IndividualData): void {
   // Identity
   const elDisplayName = makeInput();
   elDisplayName.value = data.display_name ?? "";
+  displayNameInput = elDisplayName;
   const elGivenNames = makeInput();
   elGivenNames.value = (data.name?.given ?? []).join(" ");
   const elSurname = makeInput();

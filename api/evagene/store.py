@@ -170,6 +170,7 @@ class Store:
         notes: str = "",
         properties: dict | None = None,
         individual_id: uuid.UUID | None = None,
+        individual_ids: list[uuid.UUID] | None = None,
         relationship_id: uuid.UUID | None = None,
     ) -> Egg:
         egg = Egg(
@@ -177,6 +178,7 @@ class Store:
             notes=notes,
             properties=properties or {},
             individual_id=individual_id,
+            individual_ids=individual_ids or [],
             relationship_id=relationship_id,
         )
         self.eggs[egg.id] = egg
@@ -193,8 +195,7 @@ class Store:
         if egg is None:
             return None
         for k, v in fields.items():
-            if v is not None:
-                setattr(egg, k, v)
+            setattr(egg, k, v)
         return egg
 
     def delete_egg(self, id: uuid.UUID) -> bool:

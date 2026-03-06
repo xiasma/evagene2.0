@@ -17,6 +17,7 @@ def create_egg(body: EggCreate):
         notes=body.notes,
         properties=body.properties,
         individual_id=body.individual_id,
+        individual_ids=body.individual_ids,
         relationship_id=body.relationship_id,
     )
 
@@ -36,7 +37,7 @@ def get_egg(egg_id: uuid.UUID):
 
 @router.patch("/{egg_id}", response_model=Egg)
 def update_egg(egg_id: uuid.UUID, body: EggUpdate):
-    result = store.update_egg(egg_id, **body.model_dump(exclude_none=True))
+    result = store.update_egg(egg_id, **body.model_dump(exclude_unset=True))
     if result is None:
         raise HTTPException(404, "Egg not found")
     return result

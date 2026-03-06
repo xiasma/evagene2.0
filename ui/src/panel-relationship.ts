@@ -29,6 +29,7 @@ let callbacks: PanelCallbacks;
 let sidebar: HTMLDivElement;
 let currentId: string | null = null;
 let debouncer = new DebouncerGroup();
+let displayNameInput: HTMLInputElement | null = null;
 
 export function initRelationshipPanel(cbs: PanelCallbacks): void {
   callbacks = cbs;
@@ -56,6 +57,13 @@ export function closeRelationshipPanel(): void {
   debouncer.clear();
 }
 
+export function focusRelationshipDisplayName(): void {
+  if (displayNameInput) {
+    displayNameInput.focus();
+    displayNameInput.select();
+  }
+}
+
 function buildDOM(data: RelationshipData): void {
   debouncer.clear();
   debouncer = new DebouncerGroup();
@@ -67,6 +75,7 @@ function buildDOM(data: RelationshipData): void {
 
   const elDisplayName = makeInput();
   elDisplayName.value = data.display_name ?? "";
+  displayNameInput = elDisplayName;
   const elNotes = makeTextarea();
   elNotes.value = data.notes ?? "";
 

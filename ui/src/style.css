@@ -23,9 +23,9 @@
 
   /* Canvas */
   --color-stroke: #2d2a26;
-  --color-stroke-selected: #4f46b8;
-  --color-stroke-hover: rgba(79, 70, 184, 0.35);
-  --color-selection-glow: rgba(79, 70, 184, 0.25);
+  --color-stroke-selected: #0891b2;
+  --color-stroke-hover: rgba(8, 145, 178, 0.35);
+  --color-selection-glow: rgba(8, 145, 178, 0.30);
   --color-canvas-bg: #fefefe;
   --color-grid: #eae6e0;
 
@@ -79,9 +79,9 @@
   --color-accent-text: #9b94f0;
 
   --color-stroke: #c8c3bc;
-  --color-stroke-selected: #7c73e6;
-  --color-stroke-hover: rgba(124, 115, 230, 0.35);
-  --color-selection-glow: rgba(124, 115, 230, 0.3);
+  --color-stroke-selected: #22d3ee;
+  --color-stroke-hover: rgba(34, 211, 238, 0.35);
+  --color-selection-glow: rgba(34, 211, 238, 0.35);
   --color-canvas-bg: #1a1918;
   --color-grid: #252422;
 

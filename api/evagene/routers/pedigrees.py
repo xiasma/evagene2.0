@@ -133,7 +133,10 @@ def export_gedcom(
         rel_ids = {r.id for r in rels}
         egg_list = [
             e for e in egg_list
-            if (e.individual_id and e.individual_id in id_set)
+            if (
+                (e.individual_id and e.individual_id in id_set)
+                or any(iid in id_set for iid in e.individual_ids)
+            )
             and (e.relationship_id and e.relationship_id in rel_ids)
         ]
 

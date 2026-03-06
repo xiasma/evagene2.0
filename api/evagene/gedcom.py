@@ -492,14 +492,16 @@ def serialize_gedcom(
 
         # Children
         for egg in rel_eggs.get(rel.id, []):
-            if egg.individual_id and egg.individual_id in indi_xref:
-                lines.append(f"1 CHIL {indi_xref[egg.individual_id]}")
-                twin = egg.properties.get("twin")
-                if twin:
-                    lines.append(f"2 _TWIN {twin}")
-                mono = egg.properties.get("monozygotic")
-                if mono:
-                    lines.append("2 _MONOZYGOTIC Y")
+            child_ids = egg.individual_ids if egg.individual_ids else ([egg.individual_id] if egg.individual_id else [])
+            for cid in child_ids:
+                if cid in indi_xref:
+                    lines.append(f"1 CHIL {indi_xref[cid]}")
+                    twin = egg.properties.get("twin")
+                    if twin:
+                        lines.append(f"2 _TWIN {twin}")
+                    mono = egg.properties.get("monozygotic")
+                    if mono:
+                        lines.append("2 _MONOZYGOTIC Y")
 
     # Trailer
     lines.append("0 TRLR")

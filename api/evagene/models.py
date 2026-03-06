@@ -280,7 +280,8 @@ class Egg(BaseModel):
     display_name: str = ""
     notes: str = ""
     properties: dict = Field(default_factory=dict)
-    individual_id: Optional[uuid.UUID] = None  # resulting child
+    individual_id: Optional[uuid.UUID] = None  # resulting child (single)
+    individual_ids: list[uuid.UUID] = Field(default_factory=list)  # multiple children (monozygotic twins)
     relationship_id: Optional[uuid.UUID] = None  # parent relationship
     events: list[Event] = Field(default_factory=list)
 
@@ -497,6 +498,7 @@ class EggCreate(BaseModel):
     notes: str = ""
     properties: dict = Field(default_factory=dict)
     individual_id: Optional[uuid.UUID] = None
+    individual_ids: list[uuid.UUID] = Field(default_factory=list)
     relationship_id: Optional[uuid.UUID] = None
 
 
@@ -505,6 +507,7 @@ class EggUpdate(BaseModel):
     notes: Optional[str] = None
     properties: Optional[dict] = None
     individual_id: Optional[uuid.UUID] = None
+    individual_ids: Optional[list[uuid.UUID]] = None
     relationship_id: Optional[uuid.UUID] = None
 
 

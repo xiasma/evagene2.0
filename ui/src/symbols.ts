@@ -103,7 +103,7 @@ export function drawIndividual(
   const fillColor = colors?.fill ?? defaultStroke;
 
   ctx.save();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = selected ? 3 : 2;
   ctx.strokeStyle = strokeColor;
   ctx.fillStyle = fillColor;
   ctx.setLineDash([]);
