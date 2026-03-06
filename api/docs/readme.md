@@ -23,6 +23,15 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 | PATCH | `/api/individuals/{id}` | Update an individual (partial) |
 | DELETE | `/api/individuals/{id}` | Delete an individual |
 | POST | `/api/individuals/{id}/events` | Add an event to an individual |
+| POST | `/api/individuals/{id}/diseases` | Add a disease to an individual |
+| DELETE | `/api/individuals/{id}/diseases/{disease_id}` | Remove a disease |
+| POST | `/api/individuals/{id}/diseases/{disease_id}/manifestations` | Add a manifestation |
+| GET | `/api/individuals/{id}/diseases/{disease_id}/manifestations` | List manifestations |
+| PATCH | `/api/individuals/{id}/diseases/{disease_id}/manifestations/{manif_id}` | Update a manifestation |
+| DELETE | `/api/individuals/{id}/diseases/{disease_id}/manifestations/{manif_id}` | Delete a manifestation |
+| POST | `/api/individuals/{id}/markers` | Add a marker to an individual |
+| PATCH | `/api/individuals/{id}/markers/{marker_id}` | Update a marker |
+| DELETE | `/api/individuals/{id}/markers/{marker_id}` | Remove a marker |
 
 ### Relationships (`/api/relationships`)
 
@@ -48,6 +57,8 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 | DELETE | `/api/eggs/{id}` | Delete an egg |
 | POST | `/api/eggs/{id}/events` | Add an event |
 
+An egg has both `individual_id` (single child) and `individual_ids` (multiple children for monozygotic twins sharing one egg). Setting `individual_ids` with multiple values and `individual_id` to null creates a shared egg.
+
 ### Pedigrees (`/api/pedigrees`)
 
 | Method | Path | Description |
@@ -65,8 +76,11 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 | DELETE | `/api/pedigrees/{id}/eggs/{egg_id}` | Remove egg |
 | PUT | `/api/pedigrees/{id}/restore` | Restore pedigree snapshot (undo/load) |
 | GET | `/api/pedigrees/{id}/export.ged` | Export pedigree as GEDCOM 5.5.1 file |
+| GET | `/api/pedigrees/{id}/export.ged?ids=...` | Export selected individuals only |
 | POST | `/api/pedigrees/{id}/import/gedcom` | Import GEDCOM 5.5.1 text into pedigree |
+| POST | `/api/pedigrees/{id}/import/gedcom?mode=parse` | Parse GEDCOM without modifying pedigree |
 | POST | `/api/pedigrees/{id}/import/xeg` | Import Evagene v1 .xeg XML into pedigree |
+| POST | `/api/pedigrees/{id}/import/xeg?mode=parse` | Parse XEG without modifying pedigree |
 | POST | `/api/pedigrees/{id}/events` | Add an event |
 
 ### Events (`/api/events`)
@@ -85,5 +99,3 @@ The server starts on `http://localhost:8000`. Interactive API documentation is a
 cd api
 python -m pytest tests/ -v
 ```
-
-The test suite covers all endpoints, models, and store operations (228 tests).

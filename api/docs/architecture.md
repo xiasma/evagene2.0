@@ -10,7 +10,7 @@ api/evagene/
   gedcom.py       GEDCOM 5.5.1 parser and serializer
   xeg.py          Evagene v1 .xeg XML parser
   routers/
-    individuals.py    Individual CRUD + events
+    individuals.py    Individual CRUD + events + diseases + markers
     relationships.py  Relationship CRUD + members + offspring
     events.py         Event CRUD + references
     pedigrees.py      Pedigree CRUD + entity membership + GEDCOM import/export + XEG import
@@ -62,7 +62,17 @@ The `Individual` model is the richest entity:
 - **Health**: `height_mm`, `weight_g`, `alcohol_units_per_week`, `smoker`
 - **Spatial**: `x`, `y` (canvas coordinates)
 - **Contact**: `contacts` dict of `VCardContact` objects (with phone, email, address arrays)
+- **Genetics**: `diseases` list (with manifestations), `markers` list (with alleles, zygosity)
 - **Extensibility**: `properties` dict, `events` list, `notes`, `consent_to_share`
+
+### Egg fields
+
+The `Egg` model supports both single and multiple children:
+
+- `individual_id: Optional[UUID]` — single child (normal case)
+- `individual_ids: list[UUID]` — multiple children sharing one egg (monozygotic twins)
+- `relationship_id: Optional[UUID]` — parent relationship
+- `properties: dict` — extensible; twin-related keys: `twin`, `twin_group`, `monozygotic`
 
 ### Supporting types
 
@@ -96,7 +106,7 @@ All operations are synchronous dict mutations:
 
 - **Create**: Generate UUID, store in dict, return model
 - **Read**: Dict lookup, raise 404 if missing
-- **Update**: Fetch existing, apply non-None fields from update schema, store back
+- **Update**: Fetch existing, apply fields from update schema. `update_egg` applies all provided fields including `None` values (allows clearing `individual_id`). Other update methods skip `None` values.
 - **Delete**: Remove from dict, cascade-remove from all pedigrees that reference it
 
 ### Event management
@@ -121,6 +131,10 @@ Each router follows consistent patterns:
 @router.delete("/api/individuals/{id}")# Delete → 204 or 404
 ```
 
+### Egg update
+
+The eggs router uses `exclude_unset=True` (not `exclude_none=True`) so that explicitly sending `{"individual_id": null}` clears the field — necessary when merging monozygotic twin eggs into a shared egg with `individual_ids`.
+
 ### Offspring creation (`relationships.py`)
 
 The `/offspring` endpoint is a compound operation:
@@ -137,9 +151,9 @@ The `gedcom.py` module provides two functions:
 
 - **`parse_gedcom(text)`** — Parses GEDCOM 5.5.1 text into `(individuals, relationships, eggs)` tuples. Processes INDI records (NAME, SEX, BIRT, DEAT, NOTE with CONT/CONC continuation) and FAM records (HUSB, WIFE, CHIL). Custom underscore-prefixed tags (`_X`, `_Y`, `_PROBAND`, `_AFFECTION`, `_FERTILITY`, `_DEATH_STATUS`, `_TWIN`, `_MONOZYGOTIC`) preserve Evagene-specific data for round-trip fidelity.
 
-- **`serialize_gedcom(individuals, relationships, eggs, pedigree_name)`** — Produces GEDCOM 5.5.1 text with HEAD (SOUR EVAGENE, GEDC 5.5.1, CHAR UTF-8), INDI records, FAM records, and TRLR. UUIDs are mapped to sequential xrefs (`@I1@`, `@F1@`). Date conversion: ISO `YYYY-MM-DD` ↔ GEDCOM `DD MMM YYYY`.
+- **`serialize_gedcom(individuals, relationships, eggs, pedigree_name)`** — Produces GEDCOM 5.5.1 text with HEAD (SOUR EVAGENE, GEDC 5.5.1, CHAR UTF-8), INDI records, FAM records, and TRLR. UUIDs are mapped to sequential xrefs (`@I1@`, `@F1@`). Date conversion: ISO `YYYY-MM-DD` ↔ GEDCOM `DD MMM YYYY`. Eggs with `individual_ids` emit a CHIL record per child.
 
-The pedigrees router exposes these as `GET /{id}/export.ged` (returns `PlainTextResponse` with `Content-Disposition: attachment`) and `POST /{id}/import/gedcom` (accepts `GedcomImportBody` with a `content` string field).
+The pedigrees router exposes these as `GET /{id}/export.ged` (with optional `?ids=` for selection-only export) and `POST /{id}/import/gedcom`. Both import endpoints support `?mode=parse` which returns the parsed entities as JSON without modifying the pedigree.
 
 ### XEG import (`xeg.py`)
 
@@ -149,7 +163,7 @@ The `xeg.py` module provides `parse_xeg(text)` which parses Evagene v1 `.xeg` XM
 2. **Marriages → Relationships** — parses `<Marriage>` elements with `Spouse1Ref`/`Spouse2Ref`, translating v1 GUIDs to new UUIDs
 3. **EggLists → Eggs** — follows the linkage chain: `PregnancyList` → `Pregnancy` (via `MarriageRef`) → `EggList` (via `PregnancyRef`) → `Egg` → `Siblings/Individual[@IndividualRef]`
 
-The pedigrees router exposes this as `POST /{id}/import/xeg` (accepts `XegImportBody` with a `content` string field).
+The pedigrees router exposes this as `POST /{id}/import/xeg` (with optional `?mode=parse`).
 
 ### Error handling
 

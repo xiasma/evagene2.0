@@ -5,15 +5,19 @@ Evagene is a pedigree management system for clinical and research geneticists. I
 ## What it does
 
 - **Draw to create**: Freehand-draw a circle (female), square (male), or diamond (unknown sex) on the canvas to create an individual
+- **Keyboard shortcuts**: Press `m`/`f`/`u` to add individuals, `p` for partner/marriage, `d` for disease palette, `n` for notes, `Delete` to remove, `Ctrl+A` to select all, `F2` to edit name
 - **Connect individuals**: Draw a line between two shapes to create a relationship (marriage/partnership)
 - **Parent-child lines**: Draw from a relationship line or parent to a child to establish parentage
-- **Lasso select**: Draw a closed loop around multiple individuals to select and drag them as a group
-- **Properties editor**: Click any individual to open a floating, draggable panel for editing identity, clinical status, dates, notes, and contact information
-- **Pedigree symbols**: Individuals render with standard genetic pedigree notation — affection status (filled/carrier/heterozygous), mortality (diagonal slash, X, text labels), and fertility indicators (crossbars)
-- **Save/Load**: Save and load pedigrees as JSON files for local storage
+- **Twin groups**: Draw a chevron (V-shape) between siblings to create dizygotic twins; draw a horizontal bar across chevron arms for monozygotic twins. Multiple twin pairs render as separate chevrons. Monozygotic twins share a single egg entity.
+- **Selection**: Click to select, Ctrl/Shift+click for multi-select, lasso to select groups, lasso with Ctrl/Shift to add to selection
+- **Properties editor**: Click any individual or relationship to open a floating, draggable panel for editing identity, clinical status, dates, notes, and contact information
+- **Pedigree symbols**: Individuals render with standard genetic pedigree notation — affection status (filled/carrier/heterozygous), mortality (diagonal slash, X, text labels), fertility indicators (crossbars), and disease pie sectors
+- **URL routing**: Each pedigree has a permanent URL (`/pedigrees/:id`) for direct access
+- **Inspector**: Debug/explore pedigree data at `/inspect/:id` with an Azure Portal-style blade UI showing entities, pregnancies, twin groups, and integrity checks
+- **Save/Load**: Save and load pedigrees as JSON files, with options to replace or add to the current pedigree, and to export selection only or the whole pedigree
 - **GEDCOM import/export**: Interoperate with genealogy software via GEDCOM 5.5.1 format
 - **XEG import**: Import legacy pedigrees from Evagene v1 (.xeg XML format)
-- **Zoom and pan**: Scroll wheel zoom, pinch-to-zoom on touch, toolbar buttons, and middle-click/Ctrl+click panning
+- **Zoom and pan**: Scroll wheel zoom, pinch-to-zoom on touch, toolbar buttons, and Space+drag panning
 
 ## Project structure
 
