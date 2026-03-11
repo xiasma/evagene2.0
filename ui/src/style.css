@@ -118,6 +118,7 @@ body {
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
 }
 
 /* --- App layout --- */
@@ -127,6 +128,7 @@ body {
   flex-direction: column;
   height: 100vh;
   padding: 0;
+  overflow: hidden;
 }
 
 /* --- Header & toolbar --- */
@@ -435,8 +437,8 @@ p {
   bottom: 24px;
   left: 24px;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 12px;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
@@ -457,25 +459,113 @@ p {
 }
 
 .disease-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--color-border);
-  background: var(--swatch-color, #999);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
   cursor: pointer;
-  transition: border-color var(--duration-fast), box-shadow var(--duration-fast),
-              transform var(--duration-fast);
-  padding: 0;
+  padding: 4px 8px;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+  font-family: inherit;
+  text-align: left;
+}
+
+.disease-swatch-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--swatch-color, #999);
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+
+.disease-swatch-label {
+  font-size: 0.72rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
 }
 
 .disease-swatch:hover {
-  border-color: var(--color-text-muted);
-  transform: scale(1.1);
+  background: var(--color-surface-alt);
+  border-color: var(--color-border);
 }
 
 .disease-swatch.active {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  background: var(--color-accent-subtle);
+}
+
+/* --- Disease key (movable legend) --- */
+
+.disease-key {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  backdrop-filter: blur(12px);
+  min-width: 120px;
+}
+
+.disease-key.hidden {
+  display: none;
+}
+
+.disease-key-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 8px 12px 4px;
+  cursor: grab;
+  user-select: none;
+}
+
+.disease-key-title:active {
+  cursor: grabbing;
+}
+
+.disease-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+}
+
+.disease-key-row:last-child {
+  padding-bottom: 8px;
+}
+
+.disease-key-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+
+.disease-key-label {
+  font-size: 0.7rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.disease-key-empty {
+  font-size: 0.7rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+  padding: 4px 12px 8px;
 }
 
 /* --- Undo/Redo history popup --- */

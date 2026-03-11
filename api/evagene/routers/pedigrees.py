@@ -177,13 +177,18 @@ def import_xeg(
 ):
     if store.get_pedigree(pedigree_id) is None:
         raise HTTPException(404, "Pedigree not found")
-    individuals, relationships, eggs = parse_xeg(body.content)
+    individuals, relationships, eggs, diseases = parse_xeg(body.content)
     if mode == "parse":
         return JSONResponse({
             "individuals": [i.model_dump(mode="json") for i in individuals],
             "relationships": [r.model_dump(mode="json") for r in relationships],
             "eggs": [e.model_dump(mode="json") for e in eggs],
+            "diseases": [d.model_dump(mode="json") for d in diseases],
         })
+    # Register diseases from XEG into the catalog
+    for d in diseases:
+        if d.id not in store.diseases:
+            store.diseases[d.id] = d
     store.restore_pedigree_snapshot(pedigree_id, individuals, relationships, eggs)
 
 
@@ -191,3 +196,97 @@ def import_xeg(
 def remove_egg_from_pedigree(pedigree_id: uuid.UUID, egg_id: uuid.UUID):
     if not store.remove_egg_from_pedigree(pedigree_id, egg_id):
         raise HTTPException(404, "Pedigree or egg not found")
+
+
+@router.post("/{pedigree_id}/calculate-consanguinity")
+def calculate_consanguinity(
+    pedigree_id: uuid.UUID,
+    force: bool = Query(False, description="Override manually set values"),
+):
+    """Calculate kinship coefficients for all relationships in the pedigree.
+
+    Uses Wright's path coefficient method. The kinship coefficient f(A,B)
+    between two individuals is: f(A,B) = sum over common ancestors C of
+    (1/2)^(n1+n2+1) * (1 + f_C) where n1 and n2 are path lengths from
+    A and B to C, and f_C is the inbreeding coefficient of C.
+    """
+    detail = store.get_pedigree_detail(pedigree_id)
+    if detail is None:
+        raise HTTPException(404, "Pedigree not found")
+
+    # Build parent lookup: child_id → set of parent individual IDs
+    parents: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for egg in detail.eggs:
+        child_ids = egg.individual_ids if egg.individual_ids else ([egg.individual_id] if egg.individual_id else [])
+        for cid in child_ids:
+            if cid not in parents:
+                parents[cid] = set()
+            if egg.relationship_id:
+                rel = next((r for r in detail.relationships if r.id == egg.relationship_id), None)
+                if rel:
+                    for mid in rel.members:
+                        parents[cid].add(mid)
+
+    # Memoised kinship coefficient using tabular method
+    _kinship_cache: dict[tuple[uuid.UUID, uuid.UUID], float] = {}
+
+    def kinship(a: uuid.UUID, b: uuid.UUID) -> float:
+        """Compute kinship coefficient f(a, b)."""
+        # Canonical key (order-independent)
+        key = (min(a, b), max(a, b))
+        if key in _kinship_cache:
+            return _kinship_cache[key]
+
+        # Prevent infinite recursion — mark as computing
+        _kinship_cache[key] = 0.0
+
+        if a == b:
+            # f(a,a) = (1 + f_a) / 2 where f_a is inbreeding coefficient
+            pa = parents.get(a, set())
+            if len(pa) >= 2:
+                p_list = sorted(pa)
+                f_a = kinship(p_list[0], p_list[1])
+            else:
+                f_a = 0.0
+            result = (1.0 + f_a) / 2.0
+        else:
+            # f(a,b) = (1/2) * (f(a, father_b) + f(a, mother_b))
+            # Use b's parents; if b has no parents, f(a,b) = 0
+            pb = parents.get(b, set())
+            if not pb:
+                result = 0.0
+            else:
+                result = sum(kinship(a, p) for p in pb) / (2.0 * len(pb)) * len(pb) / 1.0
+                # Correct formula: f(a,b) = (1/2) * sum_over_parents_of_b( f(a, parent) )
+                # For 2 parents: f(a,b) = (f(a, p1) + f(a, p2)) / 2
+                result = sum(kinship(a, p) for p in pb) / 2.0
+
+        _kinship_cache[key] = result
+        return result
+
+    # Calculate and update each relationship
+    updated = []
+    for rel in detail.relationships:
+        if not force and rel.consanguinity_override:
+            updated.append({
+                "relationship_id": str(rel.id),
+                "consanguinity": rel.consanguinity,
+                "overridden": True,
+            })
+            continue
+
+        if len(rel.members) >= 2:
+            f = kinship(rel.members[0], rel.members[1])
+            # Round to avoid floating point noise
+            f = round(f, 6)
+        else:
+            f = None
+
+        store.update_relationship(rel.id, consanguinity=f)
+        updated.append({
+            "relationship_id": str(rel.id),
+            "consanguinity": f,
+            "overridden": False,
+        })
+
+    return {"results": updated}

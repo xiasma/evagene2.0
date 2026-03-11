@@ -131,8 +131,7 @@ class Store:
         if rel is None:
             return None
         for k, v in fields.items():
-            if v is not None:
-                setattr(rel, k, v)
+            setattr(rel, k, v)
         return rel
 
     def delete_relationship(self, id: uuid.UUID) -> bool:

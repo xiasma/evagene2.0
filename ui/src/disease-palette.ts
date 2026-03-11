@@ -91,6 +91,14 @@ function buildSwatches(): void {
     swatch.title = disease.display_name || disease.id;
     swatch.style.setProperty("--swatch-color", disease.color || "#999");
 
+    // Add label text next to the dot
+    const dot = document.createElement("span");
+    dot.className = "disease-swatch-dot";
+    const label = document.createElement("span");
+    label.className = "disease-swatch-label";
+    label.textContent = disease.display_name || disease.id;
+    swatch.append(dot, label);
+
     // Check active state: all selected have this disease
     if (selected.length > 0) {
       const allHave = selected.every((id) =>

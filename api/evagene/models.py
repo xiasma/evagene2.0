@@ -270,6 +270,8 @@ class Relationship(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     display_name: str = ""
     members: list[uuid.UUID] = Field(default_factory=list)
+    consanguinity: Optional[float] = None  # kinship coefficient (0.0–1.0)
+    consanguinity_override: bool = False  # if True, auto-calc won't overwrite
     notes: str = ""
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
@@ -489,6 +491,8 @@ class RelationshipCreate(BaseModel):
 
 class RelationshipUpdate(BaseModel):
     display_name: Optional[str] = None
+    consanguinity: Optional[float] = None
+    consanguinity_override: Optional[bool] = None
     notes: Optional[str] = None
     properties: Optional[dict] = None
 

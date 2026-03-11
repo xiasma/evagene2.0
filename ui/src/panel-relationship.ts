@@ -13,6 +13,8 @@ interface RelationshipData {
   id: string;
   display_name: string;
   notes: string;
+  consanguinity: number | null;
+  consanguinity_override: boolean;
   events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
 }
 
@@ -108,9 +110,55 @@ function buildDOM(data: RelationshipData): void {
     statusOptions: RELATIONSHIP_STATUS_OPTIONS,
   });
 
+  // Consanguinity section
+  const consangDiv = document.createElement("div");
+  consangDiv.className = "field";
+  const consangLabel = document.createElement("label");
+  consangLabel.textContent = "Consanguinity";
+  const consangRow = document.createElement("div");
+  consangRow.style.display = "flex";
+  consangRow.style.alignItems = "center";
+  consangRow.style.gap = "8px";
+
+  const elConsang = makeInput("number");
+  elConsang.step = "0.000001";
+  elConsang.min = "0";
+  elConsang.max = "1";
+  elConsang.style.width = "100px";
+  elConsang.value = data.consanguinity != null ? String(data.consanguinity) : "";
+  elConsang.placeholder = "auto";
+  elConsang.readOnly = !data.consanguinity_override;
+
+  const overrideLabel = document.createElement("label");
+  overrideLabel.style.display = "flex";
+  overrideLabel.style.alignItems = "center";
+  overrideLabel.style.gap = "4px";
+  overrideLabel.style.fontSize = "11px";
+  overrideLabel.style.whiteSpace = "nowrap";
+  const elOverride = document.createElement("input");
+  elOverride.type = "checkbox";
+  elOverride.checked = data.consanguinity_override;
+  overrideLabel.append(elOverride, "Manual");
+
+  consangRow.append(elConsang, overrideLabel);
+  consangDiv.append(consangLabel, consangRow);
+
+  elOverride.addEventListener("change", () => {
+    callbacks.onBeforeMutation("Toggle consanguinity override");
+    elConsang.readOnly = !elOverride.checked;
+    patch({ consanguinity_override: elOverride.checked });
+  });
+
+  wireDebounced(elConsang, () => {
+    if (!elOverride.checked) return;
+    const val = elConsang.value.trim() === "" ? null : parseFloat(elConsang.value);
+    patch({ consanguinity: val });
+  });
+
   body.append(
     heading("Relationship"),
     makeField("Display Name", elDisplayName),
+    consangDiv,
     makeField("Notes", elNotes),
     eventEditor,
   );

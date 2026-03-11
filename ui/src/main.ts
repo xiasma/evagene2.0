@@ -41,6 +41,8 @@ interface DiseaseInfo {
 interface PlacedRelationship {
   id: string;
   members: string[];
+  consanguinity: number | null;
+  consanguinity_override: boolean;
   properties: Record<string, unknown>;
   events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
 }
@@ -99,6 +101,7 @@ app.innerHTML = `
       <button id="btn-zoom-reset" title="Reset zoom">1:1</button>
       <span class="separator"></span>
       <button id="btn-diseases" title="Toggle disease palette">Diseases</button>
+      <button id="btn-disease-key" title="Toggle disease key">Key</button>
       <button id="btn-genetics" title="Genetics management">Genetics</button>
       <button id="btn-pedigree" title="Pedigree properties">Pedigree</button>
       <div class="font-settings">
@@ -134,6 +137,7 @@ app.innerHTML = `
   <input type="file" id="file-xeg" accept=".xeg" style="display:none">
   <canvas id="canvas"></canvas>
   <div id="disease-palette" class="disease-palette hidden"></div>
+  <div id="disease-key" class="disease-key hidden"></div>
   <div id="sidebar" class="sidebar hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <div id="find-bar" class="find-bar hidden">
@@ -158,6 +162,7 @@ const btnFind = document.getElementById("btn-find") as HTMLButtonElement;
 const btnAddNote = document.getElementById("btn-add-note") as HTMLButtonElement;
 const btnToggleNotes = document.getElementById("btn-toggle-notes") as HTMLButtonElement;
 const btnDiseases = document.getElementById("btn-diseases") as HTMLButtonElement;
+const btnDiseaseKey = document.getElementById("btn-disease-key") as HTMLButtonElement;
 const btnGenetics = document.getElementById("btn-genetics") as HTMLButtonElement;
 const btnPedigree = document.getElementById("btn-pedigree") as HTMLButtonElement;
 const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
@@ -1903,8 +1908,22 @@ async function refreshState() {
   eggs = expandEggs(detail.eggs ?? []);
   // Load floating notes from pedigree properties
   floatingNotes = (detail.properties?.floating_notes as FloatingNote[]) ?? [];
-  // Refresh disease palette (non-blocking)
+  // Refresh disease palette and key (non-blocking)
   refreshDiseasePalette();
+  refreshDiseaseKey();
+  // Auto-calculate consanguinity for non-overridden relationships (non-blocking)
+  if (pedigreeId && relationships.some((r) => r.members.length >= 2)) {
+    api<{ results: { relationship_id: string; consanguinity: number | null }[] }>(
+      `/api/pedigrees/${pedigreeId}/calculate-consanguinity`,
+      { method: "POST" },
+    ).then((res) => {
+      for (const r of res.results) {
+        const rel = relationships.find((rl) => rl.id === r.relationship_id);
+        if (rel) rel.consanguinity = r.consanguinity;
+      }
+      render();
+    }).catch(() => {});
+  }
 }
 
 /** Assign grid positions to individuals that have no x/y, then PATCH them. */
@@ -2012,7 +2031,7 @@ async function handleParentalLineFromIndividual(
         `/api/pedigrees/${pedigreeId}/relationships/${newRel.id}`,
         { method: "POST" },
       );
-      rel = { id: newRel.id, members: [parentId], properties: {}, events: [] };
+      rel = { id: newRel.id, members: [parentId], consanguinity: null, consanguinity_override: false, properties: {}, events: [] };
     }
 
     await api(`/api/relationships/${rel!.id}/offspring`, {
@@ -3415,6 +3434,112 @@ function showModal(title: string, message: string, options: { label: string; val
   });
 }
 
+/** Show a disease-matching modal. Each imported disease can be mapped to an existing one or created as new. */
+function showDiseaseMatchModal(
+  importedDiseases: { id: string; display_name: string; color: string }[],
+  existingDiseases: DiseaseInfo[],
+): Promise<Map<string, string>> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.style.maxWidth = "460px";
+    dialog.style.minWidth = "360px";
+
+    const h4 = document.createElement("h4");
+    h4.textContent = "Match Diseases";
+    dialog.appendChild(h4);
+
+    const p = document.createElement("p");
+    p.textContent = "Map imported diseases to existing ones, or create new entries.";
+    dialog.appendChild(p);
+
+    const rows: { importId: string; select: HTMLSelectElement }[] = [];
+
+    for (const d of importedDiseases) {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "8px";
+      row.style.marginBottom = "8px";
+
+      const dot = document.createElement("span");
+      dot.style.width = "14px";
+      dot.style.height = "14px";
+      dot.style.borderRadius = "50%";
+      dot.style.background = d.color || "#999";
+      dot.style.flexShrink = "0";
+
+      const label = document.createElement("span");
+      label.textContent = d.display_name || d.id;
+      label.style.flex = "1";
+      label.style.fontSize = "0.78rem";
+      label.style.overflow = "hidden";
+      label.style.textOverflow = "ellipsis";
+      label.style.whiteSpace = "nowrap";
+
+      const sel = document.createElement("select");
+      sel.style.fontSize = "0.75rem";
+      sel.style.padding = "3px 6px";
+      sel.style.maxWidth = "160px";
+
+      const optNew = document.createElement("option");
+      optNew.value = "__new__";
+      optNew.textContent = "Create new";
+      sel.appendChild(optNew);
+
+      // Try auto-matching by name (case-insensitive)
+      let autoMatch = "";
+      for (const ex of existingDiseases) {
+        const opt = document.createElement("option");
+        opt.value = ex.id;
+        opt.textContent = ex.display_name || ex.id;
+        sel.appendChild(opt);
+        if (ex.display_name.toLowerCase() === d.display_name.toLowerCase()) {
+          autoMatch = ex.id;
+        }
+      }
+      if (autoMatch) sel.value = autoMatch;
+
+      row.append(dot, label, sel);
+      dialog.appendChild(row);
+      rows.push({ importId: d.id, select: sel });
+    }
+
+    const btnContainer = document.createElement("div");
+    btnContainer.className = "modal-buttons";
+    btnContainer.style.flexDirection = "row";
+    btnContainer.style.justifyContent = "flex-end";
+    btnContainer.style.marginTop = "12px";
+
+    const btnCancel = document.createElement("button");
+    btnCancel.textContent = "Cancel";
+    btnCancel.addEventListener("click", () => {
+      overlay.remove();
+      resolve(new Map()); // empty = cancelled
+    });
+
+    const btnOk = document.createElement("button");
+    btnOk.textContent = "Import";
+    btnOk.className = "primary";
+    btnOk.addEventListener("click", () => {
+      const mapping = new Map<string, string>();
+      for (const r of rows) {
+        mapping.set(r.importId, r.select.value);
+      }
+      overlay.remove();
+      resolve(mapping);
+    });
+
+    btnContainer.append(btnCancel, btnOk);
+    dialog.appendChild(btnContainer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+  });
+}
+
 const SEX_LABELS: Record<string, string> = {
   male: "Male",
   female: "Female",
@@ -3570,12 +3695,28 @@ function render() {
 
     const [left, right] = a.x <= b.x ? [a, b] : [b, a];
 
-    ctx.beginPath();
-    ctx.moveTo(left.x + SHAPE_EDGE, left.y);
-    ctx.lineTo(right.x - SHAPE_EDGE, right.y);
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    const isConsanguineous = rel.consanguinity != null && rel.consanguinity > 0;
+    if (isConsanguineous) {
+      // Double line for consanguineous relationships
+      const gap = 3;
+      ctx.beginPath();
+      ctx.moveTo(left.x + SHAPE_EDGE, left.y - gap);
+      ctx.lineTo(right.x - SHAPE_EDGE, right.y - gap);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(left.x + SHAPE_EDGE, left.y + gap);
+      ctx.lineTo(right.x - SHAPE_EDGE, right.y + gap);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(left.x + SHAPE_EDGE, left.y);
+      ctx.lineTo(right.x - SHAPE_EDGE, right.y);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
     // Draw separation / divorce slashes on the relationship line
     const hasSep = rel.events?.some((ev) => ev.type === "separation" || ev.properties?.status === "separation");
@@ -4217,6 +4358,83 @@ btnDiseases.addEventListener("click", () => {
   }
 });
 
+// --- Disease Key ---
+const diseaseKeyEl = document.getElementById("disease-key") as HTMLDivElement;
+let diseaseKeyOpen = false;
+
+function refreshDiseaseKey(): void {
+  if (!diseaseKeyOpen) return;
+  diseaseKeyEl.innerHTML = "";
+
+  // Title bar
+  const titleBar = document.createElement("div");
+  titleBar.className = "disease-key-title";
+  titleBar.textContent = "Disease Key";
+  diseaseKeyEl.appendChild(titleBar);
+
+  // Make draggable by title bar
+  let dkDragging = false;
+  let dkStartX = 0;
+  let dkStartY = 0;
+  let dkOrigLeft = 0;
+  let dkOrigTop = 0;
+  titleBar.addEventListener("pointerdown", (e) => {
+    dkDragging = true;
+    dkStartX = e.clientX;
+    dkStartY = e.clientY;
+    const rect = diseaseKeyEl.getBoundingClientRect();
+    dkOrigLeft = rect.left;
+    dkOrigTop = rect.top;
+    titleBar.setPointerCapture(e.pointerId);
+  });
+  titleBar.addEventListener("pointermove", (e) => {
+    if (!dkDragging) return;
+    diseaseKeyEl.style.left = `${dkOrigLeft + e.clientX - dkStartX}px`;
+    diseaseKeyEl.style.top = `${dkOrigTop + e.clientY - dkStartY}px`;
+    diseaseKeyEl.style.right = "auto";
+    diseaseKeyEl.style.bottom = "auto";
+  });
+  titleBar.addEventListener("pointerup", () => { dkDragging = false; });
+
+  // Collect diseases in use
+  const usedDiseaseIds = new Set<string>();
+  for (const ind of individuals) {
+    if (ind.diseases) {
+      for (const d of ind.diseases) usedDiseaseIds.add(d.disease_id);
+    }
+  }
+
+  if (usedDiseaseIds.size === 0) {
+    const empty = document.createElement("div");
+    empty.className = "disease-key-empty";
+    empty.textContent = "No diseases assigned";
+    diseaseKeyEl.appendChild(empty);
+    return;
+  }
+
+  for (const diseaseId of usedDiseaseIds) {
+    const info = diseaseCatalog.get(diseaseId);
+    if (!info) continue;
+    const row = document.createElement("div");
+    row.className = "disease-key-row";
+    const dot = document.createElement("span");
+    dot.className = "disease-key-dot";
+    dot.style.background = info.color || "#999";
+    const label = document.createElement("span");
+    label.className = "disease-key-label";
+    label.textContent = info.display_name || diseaseId;
+    row.append(dot, label);
+    diseaseKeyEl.appendChild(row);
+  }
+}
+
+btnDiseaseKey.addEventListener("click", () => {
+  diseaseKeyOpen = !diseaseKeyOpen;
+  diseaseKeyEl.classList.toggle("hidden", !diseaseKeyOpen);
+  btnDiseaseKey.classList.toggle("active", diseaseKeyOpen);
+  if (diseaseKeyOpen) refreshDiseaseKey();
+});
+
 btnGenetics.addEventListener("click", () => {
   openPanelFor({ type: "genetics" });
 });
@@ -4363,6 +4581,11 @@ async function addEntitiesToPedigree(
         death_status: ind.death_status,
         affection_status: ind.affection_status,
         fertility_status: ind.fertility_status,
+        proband: ind.proband,
+        proband_text: ind.proband_text,
+        generation: ind.generation,
+        diseases: ind.diseases,
+        events: ind.events,
       }),
     });
     if (ind.id) idMap.set(ind.id as string, created.id);
@@ -4381,6 +4604,10 @@ async function addEntitiesToPedigree(
         members,
         children,
         properties: rel.properties,
+        display_name: rel.display_name,
+        consanguinity: rel.consanguinity,
+        consanguinity_override: rel.consanguinity_override,
+        events: rel.events,
       }),
     });
     if (rel.id) idMap.set(rel.id as string, created.id);
@@ -4608,22 +4835,63 @@ fileXegInput.addEventListener("change", async () => {
     ]);
     if (choice === "cancel") return;
 
+    // Always parse first to extract diseases for matching
+    const parsed = await api<{
+      individuals: Record<string, unknown>[];
+      relationships: Record<string, unknown>[];
+      eggs: Record<string, unknown>[];
+      diseases?: { id: string; display_name: string; color: string }[];
+    }>(`/api/pedigrees/${pedigreeId}/import/xeg?mode=parse`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+
+    // Disease matching: if parsed diseases exist, show matching modal
+    const parsedDiseases = parsed.diseases ?? [];
+    let diseaseIdMap: Map<string, string> | null = null;
+    if (parsedDiseases.length > 0) {
+      const existingDiseases = await api<DiseaseInfo[]>("/api/diseases");
+      diseaseIdMap = await showDiseaseMatchModal(parsedDiseases, existingDiseases);
+      if (diseaseIdMap.size === 0) return; // cancelled
+
+      // Create new diseases for "__new__" entries and remap
+      for (const [importId, targetId] of diseaseIdMap.entries()) {
+        if (targetId === "__new__") {
+          const d = parsedDiseases.find((dd) => dd.id === importId);
+          if (d) {
+            const created = await api<{ id: string }>("/api/diseases", {
+              method: "POST",
+              body: JSON.stringify({ display_name: d.display_name, color: d.color }),
+            });
+            diseaseIdMap.set(importId, created.id);
+          }
+        }
+      }
+
+      // Remap disease_id references in individuals
+      for (const ind of parsed.individuals) {
+        const diseases = ind.diseases as { disease_id: string }[] | undefined;
+        if (diseases) {
+          for (const d of diseases) {
+            const mapped = diseaseIdMap.get(d.disease_id);
+            if (mapped) d.disease_id = mapped;
+          }
+        }
+      }
+    }
+
     pushUndo(captureSnapshot("Import XEG"));
 
     if (choice === "replace") {
-      await api(`/api/pedigrees/${pedigreeId}/import/xeg`, {
-        method: "POST",
-        body: JSON.stringify({ content }),
+      await api(`/api/pedigrees/${pedigreeId}/restore`, {
+        method: "PUT",
+        body: JSON.stringify({
+          individuals: parsed.individuals,
+          relationships: parsed.relationships,
+          eggs: parsed.eggs,
+        }),
       });
     } else {
-      const parsed = await api<{
-        individuals: Record<string, unknown>[];
-        relationships: Record<string, unknown>[];
-        eggs: Record<string, unknown>[];
-      }>(`/api/pedigrees/${pedigreeId}/import/xeg?mode=parse`, {
-        method: "POST",
-        body: JSON.stringify({ content }),
-      });
       await addEntitiesToPedigree(parsed.individuals, parsed.relationships, parsed.eggs);
     }
 
