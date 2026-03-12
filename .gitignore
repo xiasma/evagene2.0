@@ -17,3 +17,4 @@ api/.venv/
 # UI
 ui/node_modules/
 ui/dist/
+.claude/settings.local.json
