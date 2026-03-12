@@ -114,6 +114,22 @@ class ManifestationStatus(str, Enum):
     other = "other"
 
 
+class Laterality(str, Enum):
+    unknown = "unknown"
+    left = "left"
+    right = "right"
+    bilateral = "bilateral"
+    not_applicable = "not_applicable"
+
+
+class GeneticTestResult(str, Enum):
+    unknown = "unknown"
+    positive = "positive"
+    negative = "negative"
+    variant_of_uncertain_significance = "variant_of_uncertain_significance"
+    not_tested = "not_tested"
+
+
 # --- Domain models ---
 
 
@@ -208,9 +224,28 @@ class Marker(BaseModel):
     properties: dict = Field(default_factory=dict)
 
 
+class Ethnicity(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class TreatmentType(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
 class Disease(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    icd10_code: str = ""
+    omim_id: str = ""
     color: str = ""
     notes: str = ""
     properties: dict = Field(default_factory=dict)
@@ -229,8 +264,36 @@ class Manifestation(BaseModel):
 
 class IndividualDisease(BaseModel):
     disease_id: uuid.UUID
+    laterality: Optional[Laterality] = None
+    site: str = ""  # body site, e.g. "breast", "ovary", "colon"
+    tumor_properties: dict = Field(default_factory=dict)  # ER/PR/HER2/grade/stage
     manifestations: list[Manifestation] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
+
+
+class GeneticTest(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    gene: str = ""  # e.g. "BRCA1", "BRCA2", "MLH1"
+    result: Optional[GeneticTestResult] = None
+    method: str = ""  # e.g. "sequencing", "MLPA", "panel"
+    date: Optional[str] = None  # ISO date
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualTreatment(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    treatment_type_id: uuid.UUID
+    disease_id: Optional[uuid.UUID] = None  # which disease, if applicable
+    laterality: Optional[Laterality] = None  # for surgeries
+    date: Optional[str] = None  # start date
+    end_date: Optional[str] = None
+    prophylactic: bool = False
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualEthnicity(BaseModel):
+    ethnicity_id: uuid.UUID
+    proportion: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class IndividualMarker(BaseModel):
@@ -260,8 +323,11 @@ class Individual(BaseModel):
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
     species_id: Optional[uuid.UUID] = None
+    ethnicities: list[IndividualEthnicity] = Field(default_factory=list)
     diseases: list[IndividualDisease] = Field(default_factory=list)
     markers: list[IndividualMarker] = Field(default_factory=list)
+    genetic_tests: list[GeneticTest] = Field(default_factory=list)
+    treatments: list[IndividualTreatment] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
     events: list[Event] = Field(default_factory=list)
 
@@ -298,6 +364,9 @@ class Pedigree(BaseModel):
     events: list[Event] = Field(default_factory=list)
     created_at: Optional[str] = None  # ISO datetime, set on creation
     updated_at: Optional[str] = None  # ISO datetime, set on modification
+    disease_ids: list[uuid.UUID] = Field(default_factory=list)
+    ethnicity_ids: list[uuid.UUID] = Field(default_factory=list)
+    treatment_type_ids: list[uuid.UUID] = Field(default_factory=list)
     individual_ids: list[uuid.UUID] = Field(default_factory=list)
     relationship_ids: list[uuid.UUID] = Field(default_factory=list)
     egg_ids: list[uuid.UUID] = Field(default_factory=list)
@@ -318,6 +387,9 @@ class PedigreeCreate(BaseModel):
     date_represented: Optional[str] = None
     owner: str = ""
     notes: str = ""
+    disease_ids: list[uuid.UUID] = Field(default_factory=list)
+    ethnicity_ids: list[uuid.UUID] = Field(default_factory=list)
+    treatment_type_ids: list[uuid.UUID] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
 
 
@@ -326,6 +398,9 @@ class PedigreeUpdate(BaseModel):
     date_represented: Optional[str] = None
     owner: Optional[str] = None
     notes: Optional[str] = None
+    disease_ids: Optional[list[uuid.UUID]] = None
+    ethnicity_ids: Optional[list[uuid.UUID]] = None
+    treatment_type_ids: Optional[list[uuid.UUID]] = None
     properties: Optional[dict] = None
 
 
@@ -387,8 +462,39 @@ class MarkerUpdate(BaseModel):
     properties: Optional[dict] = None
 
 
+class EthnicityCreate(BaseModel):
+    display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class EthnicityUpdate(BaseModel):
+    display_name: Optional[str] = None
+    parent_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class TreatmentTypeCreate(BaseModel):
+    display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    notes: str = ""
+    properties: dict = Field(default_factory=dict)
+
+
+class TreatmentTypeUpdate(BaseModel):
+    display_name: Optional[str] = None
+    parent_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+    properties: Optional[dict] = None
+
+
 class DiseaseCreate(BaseModel):
     display_name: str = ""
+    parent_id: Optional[uuid.UUID] = None
+    icd10_code: str = ""
+    omim_id: str = ""
     color: str = ""
     notes: str = ""
     properties: dict = Field(default_factory=dict)
@@ -396,6 +502,9 @@ class DiseaseCreate(BaseModel):
 
 class DiseaseUpdate(BaseModel):
     display_name: Optional[str] = None
+    parent_id: Optional[uuid.UUID] = None
+    icd10_code: Optional[str] = None
+    omim_id: Optional[str] = None
     color: Optional[str] = None
     notes: Optional[str] = None
     properties: Optional[dict] = None
@@ -421,6 +530,57 @@ class ManifestationUpdate(BaseModel):
 
 class IndividualDiseaseCreate(BaseModel):
     disease_id: uuid.UUID
+    laterality: Optional[Laterality] = None
+    site: str = ""
+    tumor_properties: dict = Field(default_factory=dict)
+
+
+class IndividualDiseaseUpdate(BaseModel):
+    laterality: Optional[Laterality] = None
+    site: Optional[str] = None
+    tumor_properties: Optional[dict] = None
+    properties: Optional[dict] = None
+
+
+class GeneticTestCreate(BaseModel):
+    gene: str = ""
+    result: Optional[GeneticTestResult] = None
+    method: str = ""
+    date: Optional[str] = None
+    properties: dict = Field(default_factory=dict)
+
+
+class GeneticTestUpdate(BaseModel):
+    gene: Optional[str] = None
+    result: Optional[GeneticTestResult] = None
+    method: Optional[str] = None
+    date: Optional[str] = None
+    properties: Optional[dict] = None
+
+
+class IndividualTreatmentCreate(BaseModel):
+    treatment_type_id: uuid.UUID
+    disease_id: Optional[uuid.UUID] = None
+    laterality: Optional[Laterality] = None
+    date: Optional[str] = None
+    end_date: Optional[str] = None
+    prophylactic: bool = False
+    properties: dict = Field(default_factory=dict)
+
+
+class IndividualTreatmentUpdate(BaseModel):
+    treatment_type_id: Optional[uuid.UUID] = None
+    disease_id: Optional[uuid.UUID] = None
+    laterality: Optional[Laterality] = None
+    date: Optional[str] = None
+    end_date: Optional[str] = None
+    prophylactic: Optional[bool] = None
+    properties: Optional[dict] = None
+
+
+class IndividualEthnicityCreate(BaseModel):
+    ethnicity_id: uuid.UUID
+    proportion: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class IndividualMarkerCreate(BaseModel):
@@ -456,8 +616,11 @@ class IndividualCreate(BaseModel):
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
     species_id: Optional[uuid.UUID] = None
+    ethnicities: list[IndividualEthnicityCreate] = Field(default_factory=list)
     diseases: list[IndividualDiseaseCreate] = Field(default_factory=list)
     markers: list[IndividualMarkerCreate] = Field(default_factory=list)
+    genetic_tests: list[GeneticTestCreate] = Field(default_factory=list)
+    treatments: list[IndividualTreatmentCreate] = Field(default_factory=list)
     properties: dict = Field(default_factory=dict)
 
 
@@ -479,6 +642,7 @@ class IndividualUpdate(BaseModel):
     smoker: Optional[SmokerType] = None
     smoking_per_day: Optional[int] = None
     species_id: Optional[uuid.UUID] = None
+    ethnicities: Optional[list[IndividualEthnicityCreate]] = None
     properties: Optional[dict] = None
 
 

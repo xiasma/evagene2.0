@@ -4,9 +4,11 @@ import uuid
 from datetime import datetime, timezone
 
 from .models import (
-    Chromosome, ChromosomeSource, Disease, Egg, Event, Individual,
-    IndividualDisease, IndividualMarker, Manifestation, Marker, Pedigree,
-    PedigreeDetail, PersonName, Relationship, Species, SmokerType, VCardContact,
+    Chromosome, ChromosomeSource, Disease, Egg, Ethnicity, Event,
+    GeneticTest, GeneticTestResult, Individual, IndividualDisease,
+    IndividualEthnicity, IndividualMarker, IndividualTreatment, Laterality,
+    Manifestation, Marker, Pedigree, PedigreeDetail, PersonName,
+    Relationship, Species, SmokerType, TreatmentType, VCardContact,
 )
 
 
@@ -20,10 +22,14 @@ class Store:
         self.chromosomes: dict[uuid.UUID, Chromosome] = {}
         self.markers: dict[uuid.UUID, Marker] = {}
         self.diseases: dict[uuid.UUID, Disease] = {}
+        self.ethnicities: dict[uuid.UUID, Ethnicity] = {}
+        self.treatment_types: dict[uuid.UUID, TreatmentType] = {}
         # event_id -> (owner_id, event_index) for fast lookup
         self._event_index: dict[uuid.UUID, tuple[uuid.UUID, int]] = {}
         self._seed_default_species()
         self._seed_default_diseases()
+        self._seed_default_ethnicities()
+        self._seed_default_treatment_types()
 
     # --- Individuals ---
 
@@ -46,8 +52,11 @@ class Store:
         smoker: SmokerType | None = None,
         smoking_per_day: int | None = None,
         species_id: uuid.UUID | None = None,
+        ethnicities: list[IndividualEthnicity] | None = None,
         diseases: list[IndividualDisease] | None = None,
         markers: list[IndividualMarker] | None = None,
+        genetic_tests: list[GeneticTest] | None = None,
+        treatments: list[IndividualTreatment] | None = None,
         properties: dict | None = None,
     ) -> Individual:
         ind = Individual(
@@ -68,8 +77,11 @@ class Store:
             smoker=smoker,
             smoking_per_day=smoking_per_day,
             species_id=species_id,
+            ethnicities=ethnicities or [],
             diseases=diseases or [],
             markers=markers or [],
+            genetic_tests=genetic_tests or [],
+            treatments=treatments or [],
             properties=properties or {},
         )
         self.individuals[ind.id] = ind
@@ -393,16 +405,104 @@ class Store:
             sp.chromosome_ids.append(ch.id)
 
     def _seed_default_diseases(self) -> None:
+        # Parent category
+        cancer = Disease(display_name="Cancer", icd10_code="C80", color="#888888")
+        self.diseases[cancer.id] = cancer
+
         defaults = [
-            ("Breast Cancer", "#FF69B4"),
-            ("Ovarian Cancer", "#7B68EE"),
-            ("Colon Cancer", "#8B4513"),
-            ("Endometrial Cancer", "#DC143C"),
-            ("Pancreatic Cancer", "#4B0082"),
+            ("Breast Cancer", "C50", "#FF69B4"),
+            ("Ovarian Cancer", "C56", "#7B68EE"),
+            ("Colon Cancer", "C18", "#8B4513"),
+            ("Endometrial Cancer", "C54.1", "#DC143C"),
+            ("Pancreatic Cancer", "C25", "#4B0082"),
+            ("Prostate Cancer", "C61", "#4169E1"),
+            ("Melanoma", "C43", "#2F4F4F"),
         ]
-        for name, color in defaults:
-            d = Disease(display_name=name, color=color)
+        for name, icd10, color in defaults:
+            d = Disease(
+                display_name=name,
+                parent_id=cancer.id,
+                icd10_code=icd10,
+                color=color,
+            )
             self.diseases[d.id] = d
+
+    def _seed_default_ethnicities(self) -> None:
+        # Top-level groups used by BRCAPro / PanelPRO
+        groups: list[tuple[str, list[str]]] = [
+            ("European", [
+                "Western European", "Eastern European", "Southern European",
+                "Northern European", "Ashkenazi Jewish",
+            ]),
+            ("African", [
+                "West African", "East African", "Southern African",
+                "African American",
+            ]),
+            ("East Asian", [
+                "Chinese", "Japanese", "Korean",
+            ]),
+            ("South Asian", [
+                "Indian", "Pakistani", "Bangladeshi", "Sri Lankan",
+            ]),
+            ("Southeast Asian", [
+                "Filipino", "Vietnamese", "Thai", "Indonesian",
+            ]),
+            ("Middle Eastern", [
+                "Arab", "Persian", "Turkish", "Kurdish",
+            ]),
+            ("Hispanic/Latino", [
+                "Mexican", "Central American", "South American", "Caribbean",
+            ]),
+            ("Pacific Islander", [
+                "Polynesian", "Melanesian", "Micronesian",
+            ]),
+            ("Indigenous American", [
+                "North American Indigenous", "Central American Indigenous",
+                "South American Indigenous",
+            ]),
+        ]
+        for parent_name, children in groups:
+            parent = Ethnicity(display_name=parent_name)
+            self.ethnicities[parent.id] = parent
+            for child_name in children:
+                child = Ethnicity(display_name=child_name, parent_id=parent.id)
+                self.ethnicities[child.id] = child
+        # Standalone
+        mixed = Ethnicity(display_name="Mixed/Other")
+        self.ethnicities[mixed.id] = mixed
+
+    def _seed_default_treatment_types(self) -> None:
+        groups: list[tuple[str, list[str]]] = [
+            ("Surgery", [
+                "Mastectomy", "Lumpectomy", "Oophorectomy",
+                "Salpingo-oophorectomy", "Hysterectomy", "Colectomy",
+                "Prostatectomy", "Orchiectomy",
+            ]),
+            ("Chemotherapy", [
+                "Neoadjuvant chemotherapy", "Adjuvant chemotherapy",
+                "Palliative chemotherapy",
+            ]),
+            ("Radiation therapy", [
+                "External beam radiation", "Brachytherapy",
+            ]),
+            ("Hormone therapy", [
+                "Tamoxifen", "Aromatase inhibitor", "GnRH agonist",
+                "Hormone replacement therapy", "Oral contraceptives",
+            ]),
+            ("Immunotherapy", [
+                "Checkpoint inhibitor", "CAR-T cell therapy",
+            ]),
+            ("Targeted therapy", [
+                "PARP inhibitor", "HER2-targeted therapy",
+                "Tyrosine kinase inhibitor",
+            ]),
+        ]
+        for parent_name, children in groups:
+            parent = TreatmentType(display_name=parent_name)
+            self.treatment_types[parent.id] = parent
+            for child_name in children:
+                child = TreatmentType(display_name=child_name, parent_id=parent.id)
+                self.treatment_types[child.id] = child
 
     def create_species(
         self,
@@ -538,12 +638,18 @@ class Store:
     def create_disease(
         self,
         display_name: str = "",
+        parent_id: uuid.UUID | None = None,
+        icd10_code: str = "",
+        omim_id: str = "",
         color: str = "",
         notes: str = "",
         properties: dict | None = None,
     ) -> Disease:
         d = Disease(
             display_name=display_name,
+            parent_id=parent_id,
+            icd10_code=icd10_code,
+            omim_id=omim_id,
             color=color,
             notes=notes,
             properties=properties or {},
@@ -583,6 +689,56 @@ class Store:
             return False
         d.marker_ids.remove(marker_id)
         return True
+
+    # --- Ethnicities ---
+
+    def create_ethnicity(self, **fields) -> Ethnicity:
+        e = Ethnicity(**{k: v for k, v in fields.items() if v is not None})
+        self.ethnicities[e.id] = e
+        return e
+
+    def get_ethnicity(self, id: uuid.UUID) -> Ethnicity | None:
+        return self.ethnicities.get(id)
+
+    def list_ethnicities(self) -> list[Ethnicity]:
+        return list(self.ethnicities.values())
+
+    def update_ethnicity(self, id: uuid.UUID, **fields) -> Ethnicity | None:
+        e = self.ethnicities.get(id)
+        if e is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(e, k, v)
+        return e
+
+    def delete_ethnicity(self, id: uuid.UUID) -> bool:
+        return self.ethnicities.pop(id, None) is not None
+
+    # --- Treatment Types ---
+
+    def create_treatment_type(self, **fields) -> TreatmentType:
+        t = TreatmentType(**{k: v for k, v in fields.items() if v is not None})
+        self.treatment_types[t.id] = t
+        return t
+
+    def get_treatment_type(self, id: uuid.UUID) -> TreatmentType | None:
+        return self.treatment_types.get(id)
+
+    def list_treatment_types(self) -> list[TreatmentType]:
+        return list(self.treatment_types.values())
+
+    def update_treatment_type(self, id: uuid.UUID, **fields) -> TreatmentType | None:
+        t = self.treatment_types.get(id)
+        if t is None:
+            return None
+        for k, v in fields.items():
+            if v is not None:
+                setattr(t, k, v)
+        return t
+
+    def delete_treatment_type(self, id: uuid.UUID) -> bool:
+        return self.treatment_types.pop(id, None) is not None
 
     # --- Individual diseases / markers / manifestations ---
 
@@ -678,6 +834,97 @@ class Store:
         before = len(ind.markers)
         ind.markers = [m for m in ind.markers if m.marker_id != marker_id]
         return len(ind.markers) < before
+
+    # --- Individual ethnicities ---
+
+    def add_ethnicity_to_individual(self, ind_id: uuid.UUID, ethnicity: IndividualEthnicity) -> IndividualEthnicity | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        # Replace if same ethnicity_id already exists
+        ind.ethnicities = [e for e in ind.ethnicities if e.ethnicity_id != ethnicity.ethnicity_id]
+        ind.ethnicities.append(ethnicity)
+        return ethnicity
+
+    def remove_ethnicity_from_individual(self, ind_id: uuid.UUID, ethnicity_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        before = len(ind.ethnicities)
+        ind.ethnicities = [e for e in ind.ethnicities if e.ethnicity_id != ethnicity_id]
+        return len(ind.ethnicities) < before
+
+    # --- Individual genetic tests ---
+
+    def add_genetic_test(self, ind_id: uuid.UUID, test: GeneticTest) -> GeneticTest | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        ind.genetic_tests.append(test)
+        return test
+
+    def update_genetic_test(self, ind_id: uuid.UUID, test_id: uuid.UUID, **fields) -> GeneticTest | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for t in ind.genetic_tests:
+            if t.id == test_id:
+                for k, v in fields.items():
+                    if v is not None:
+                        setattr(t, k, v)
+                return t
+        return None
+
+    def delete_genetic_test(self, ind_id: uuid.UUID, test_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        before = len(ind.genetic_tests)
+        ind.genetic_tests = [t for t in ind.genetic_tests if t.id != test_id]
+        return len(ind.genetic_tests) < before
+
+    # --- Individual treatments ---
+
+    def add_treatment(self, ind_id: uuid.UUID, treatment: IndividualTreatment) -> IndividualTreatment | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        ind.treatments.append(treatment)
+        return treatment
+
+    def update_treatment(self, ind_id: uuid.UUID, treatment_id: uuid.UUID, **fields) -> IndividualTreatment | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for t in ind.treatments:
+            if t.id == treatment_id:
+                for k, v in fields.items():
+                    if v is not None:
+                        setattr(t, k, v)
+                return t
+        return None
+
+    def delete_treatment(self, ind_id: uuid.UUID, treatment_id: uuid.UUID) -> bool:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return False
+        before = len(ind.treatments)
+        ind.treatments = [t for t in ind.treatments if t.id != treatment_id]
+        return len(ind.treatments) < before
+
+    # --- Individual disease update ---
+
+    def update_individual_disease(self, ind_id: uuid.UUID, disease_id: uuid.UUID, **fields) -> IndividualDisease | None:
+        ind = self.individuals.get(ind_id)
+        if ind is None:
+            return None
+        for d in ind.diseases:
+            if d.disease_id == disease_id:
+                for k, v in fields.items():
+                    if v is not None:
+                        setattr(d, k, v)
+                return d
+        return None
 
     # --- Events ---
 

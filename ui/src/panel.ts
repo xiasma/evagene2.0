@@ -17,7 +17,35 @@ import { buildEventEditor } from "./event-editor";
 
 interface IndividualDiseaseEntry {
   disease_id: string;
+  laterality: string | null;
+  site: string;
+  tumor_properties: Record<string, unknown>;
   manifestations: unknown[];
+  properties: Record<string, unknown>;
+}
+
+interface IndividualEthnicityEntry {
+  ethnicity_id: string;
+  proportion: number;
+}
+
+interface IndividualGeneticTestEntry {
+  id: string;
+  gene: string;
+  result: string | null;
+  method: string;
+  date: string | null;
+  properties: Record<string, unknown>;
+}
+
+interface IndividualTreatmentEntry {
+  id: string;
+  treatment_type_id: string;
+  disease_id: string | null;
+  laterality: string | null;
+  date: string | null;
+  end_date: string | null;
+  prophylactic: boolean;
   properties: Record<string, unknown>;
 }
 
@@ -32,7 +60,20 @@ interface IndividualMarkerEntry {
 interface CatalogDisease {
   id: string;
   display_name: string;
+  parent_id: string | null;
   color: string;
+}
+
+interface CatalogEthnicity {
+  id: string;
+  display_name: string;
+  parent_id: string | null;
+}
+
+interface CatalogTreatmentType {
+  id: string;
+  display_name: string;
+  parent_id: string | null;
 }
 
 interface CatalogMarker {
@@ -61,8 +102,11 @@ interface IndividualData {
     email: { value: string; type: string }[];
   }>;
   events: { id: string; type: string; display_name: string; date: string | null; properties: Record<string, unknown> }[];
+  ethnicities: IndividualEthnicityEntry[];
   diseases: IndividualDiseaseEntry[];
   markers: IndividualMarkerEntry[];
+  genetic_tests: IndividualGeneticTestEntry[];
+  treatments: IndividualTreatmentEntry[];
 }
 
 // --- Module state ---
@@ -73,6 +117,8 @@ let currentId: string | null = null;
 let debouncer = new DebouncerGroup();
 let diseaseCatalog: CatalogDisease[] = [];
 let markerCatalog: CatalogMarker[] = [];
+let ethnicityCatalog: CatalogEthnicity[] = [];
+let treatmentTypeCatalog: CatalogTreatmentType[] = [];
 let displayNameInput: HTMLInputElement | null = null;
 
 // --- Dropdown option lists ---
@@ -140,6 +186,24 @@ const INDIVIDUAL_EVENT_TYPES = [
   ["fertility", "Fertility"],
 ];
 
+const LATERALITY_OPTIONS = [
+  ["", "(none)"],
+  ["unknown", "Unknown"],
+  ["left", "Left"],
+  ["right", "Right"],
+  ["bilateral", "Bilateral"],
+  ["not_applicable", "N/A"],
+];
+
+const GENETIC_TEST_RESULT_OPTIONS = [
+  ["", "(none)"],
+  ["unknown", "Unknown"],
+  ["positive", "Positive"],
+  ["negative", "Negative"],
+  ["variant_of_uncertain_significance", "VUS"],
+  ["not_tested", "Not tested"],
+];
+
 // --- Init ---
 
 export function initPanel(cbs: PanelCallbacks): void {
@@ -160,13 +224,17 @@ export async function openPanel(individualId: string): Promise<void> {
     sidebar.style.left = "auto";
   }
 
-  const [data, diseases, markers] = await Promise.all([
+  const [data, diseases, markers, ethnicities, treatmentTypes] = await Promise.all([
     callbacks.api<IndividualData>(`/api/individuals/${individualId}`),
     callbacks.api<CatalogDisease[]>("/api/diseases").catch(() => [] as CatalogDisease[]),
     callbacks.api<CatalogMarker[]>("/api/markers").catch(() => [] as CatalogMarker[]),
+    callbacks.api<CatalogEthnicity[]>("/api/ethnicities").catch(() => [] as CatalogEthnicity[]),
+    callbacks.api<CatalogTreatmentType[]>("/api/treatment-types").catch(() => [] as CatalogTreatmentType[]),
   ]);
   diseaseCatalog = diseases;
   markerCatalog = markers;
+  ethnicityCatalog = ethnicities;
+  treatmentTypeCatalog = treatmentTypes;
   buildDOM(data);
 }
 
@@ -427,64 +495,201 @@ function buildDOM(data: IndividualData): void {
     callbacks,
   });
 
-  // --- Diseases section ---
+  // --- Diseases section (popup picker instead of dropdown) ---
   const diseasesSection = document.createElement("div");
   diseasesSection.append(heading("Diseases"));
 
-  const diseaseBadges = document.createElement("div");
-  diseaseBadges.className = "badge-list";
-  const assignedDiseaseIds = (data.diseases ?? []).map((d) => d.disease_id);
-
+  const diseaseList = document.createElement("div");
   for (const entry of data.diseases ?? []) {
     const cat = diseaseCatalog.find((d) => d.id === entry.disease_id);
+    diseaseList.append(buildDiseaseItem(data, entry, cat, name));
+  }
+  diseasesSection.append(diseaseList);
+
+  // Add disease button + popup
+  const assignedDiseaseIds = new Set((data.diseases ?? []).map((d) => d.disease_id));
+  const unassignedDiseases = diseaseCatalog.filter((d) => !assignedDiseaseIds.has(d.id));
+  if (unassignedDiseases.length > 0) {
+    diseasesSection.append(
+      buildPopupPicker({
+        buttonLabel: "+ Add Disease",
+        items: unassignedDiseases,
+        groups: diseaseCatalog,
+        searchPlaceholder: "Search diseases...",
+        renderItem: (item) => {
+          const d = item as CatalogDisease;
+          const dot = document.createElement("span");
+          dot.className = "disease-dot";
+          dot.style.background = d.color || "#999";
+          const label = document.createElement("span");
+          label.textContent = d.display_name || d.id;
+          const frag = document.createDocumentFragment();
+          frag.append(dot, label);
+          return frag;
+        },
+        onSelect: async (item) => {
+          const d = item as CatalogDisease;
+          callbacks.onBeforeMutation(`Add ${d.display_name || "disease"} to ${name()}`);
+          try {
+            await callbacks.api(`/api/individuals/${data.id}/diseases`, {
+              method: "POST",
+              body: JSON.stringify({ disease_id: d.id }),
+            });
+            await callbacks.onUpdate();
+            if (currentId) openPanel(currentId);
+          } catch (err) {
+            console.error("Failed to add disease:", err);
+          }
+        },
+      }),
+    );
+  }
+
+  // --- Ethnicity section ---
+  const ethnicitySection = document.createElement("div");
+  ethnicitySection.append(heading("Ethnicity"));
+
+  const ethnicityBadges = document.createElement("div");
+  ethnicityBadges.className = "badge-list";
+  const assignedEthnicityIds = new Set((data.ethnicities ?? []).map((e) => e.ethnicity_id));
+
+  for (const entry of data.ethnicities ?? []) {
+    const cat = ethnicityCatalog.find((e) => e.id === entry.ethnicity_id);
     const badge = document.createElement("div");
-    badge.className = "resource-badge";
-    const dot = document.createElement("span");
-    dot.className = "disease-dot";
-    dot.style.background = cat?.color || "#999";
+    badge.className = "ethnicity-badge";
     const nameSpan = document.createElement("span");
-    nameSpan.textContent = cat?.display_name || entry.disease_id;
+    nameSpan.textContent = cat?.display_name || entry.ethnicity_id;
+    const propInput = makeInput();
+    propInput.className = "ethnicity-proportion";
+    propInput.type = "number";
+    propInput.min = "0";
+    propInput.max = "100";
+    propInput.step = "1";
+    propInput.value = String(Math.round(entry.proportion * 100));
+    propInput.title = "Proportion %";
+    propInput.addEventListener("change", async () => {
+      const pct = Math.max(0, Math.min(100, parseInt(propInput.value, 10) || 0));
+      propInput.value = String(pct);
+      callbacks.onBeforeMutation(`Edit ethnicity proportion on ${name()}`);
+      try {
+        await callbacks.api(`/api/individuals/${data.id}/ethnicities`, {
+          method: "POST",
+          body: JSON.stringify({ ethnicity_id: entry.ethnicity_id, proportion: pct / 100 }),
+        });
+        await callbacks.onUpdate();
+      } catch (err) {
+        console.error("Failed to update ethnicity:", err);
+      }
+    });
+    const pctLabel = document.createElement("span");
+    pctLabel.textContent = "%";
+    pctLabel.style.fontSize = "0.68rem";
+    pctLabel.style.color = "var(--color-text-subtle)";
     const removeBtn = document.createElement("button");
     removeBtn.className = "badge-remove";
     removeBtn.textContent = "\u00d7";
     removeBtn.addEventListener("click", async () => {
-      callbacks.onBeforeMutation(`Remove ${cat?.display_name || "disease"} from ${name()}`);
+      callbacks.onBeforeMutation(`Remove ${cat?.display_name || "ethnicity"} from ${name()}`);
       try {
-        await callbacks.api(`/api/individuals/${data.id}/diseases/${entry.disease_id}`, { method: "DELETE" });
+        await callbacks.api(`/api/individuals/${data.id}/ethnicities/${entry.ethnicity_id}`, { method: "DELETE" });
         await callbacks.onUpdate();
         if (currentId) openPanel(currentId);
       } catch (err) {
-        console.error("Failed to remove disease:", err);
+        console.error("Failed to remove ethnicity:", err);
       }
     });
-    badge.append(dot, nameSpan, removeBtn);
-    diseaseBadges.append(badge);
+    badge.append(nameSpan, propInput, pctLabel, removeBtn);
+    ethnicityBadges.append(badge);
   }
-  diseasesSection.append(diseaseBadges);
+  ethnicitySection.append(ethnicityBadges);
 
-  // Add disease dropdown
-  const unassignedDiseases = diseaseCatalog.filter((d) => !assignedDiseaseIds.includes(d.id));
-  if (unassignedDiseases.length > 0) {
-    const addDiseaseSel = makeSelect([
-      ["", "Add disease..."],
-      ...unassignedDiseases.map((d) => [d.id, d.display_name || d.id]),
-    ]);
-    addDiseaseSel.addEventListener("change", async () => {
-      if (!addDiseaseSel.value) return;
-      const diseaseName = unassignedDiseases.find((d) => d.id === addDiseaseSel.value)?.display_name || "disease";
-      callbacks.onBeforeMutation(`Add ${diseaseName} to ${name()}`);
-      try {
-        await callbacks.api(`/api/individuals/${data.id}/diseases`, {
-          method: "POST",
-          body: JSON.stringify({ disease_id: addDiseaseSel.value }),
-        });
-        await callbacks.onUpdate();
-        if (currentId) openPanel(currentId);
-      } catch (err) {
-        console.error("Failed to add disease:", err);
-      }
-    });
-    diseasesSection.append(addDiseaseSel);
+  // Add ethnicity popup
+  const unassignedEthnicities = ethnicityCatalog.filter((e) => !assignedEthnicityIds.has(e.id));
+  if (unassignedEthnicities.length > 0) {
+    ethnicitySection.append(
+      buildPopupPicker({
+        buttonLabel: "+ Add Ethnicity",
+        items: unassignedEthnicities,
+        groups: ethnicityCatalog,
+        searchPlaceholder: "Search ethnicities...",
+        onSelect: async (item) => {
+          callbacks.onBeforeMutation(`Add ${item.display_name || "ethnicity"} to ${name()}`);
+          try {
+            await callbacks.api(`/api/individuals/${data.id}/ethnicities`, {
+              method: "POST",
+              body: JSON.stringify({ ethnicity_id: item.id, proportion: 1.0 }),
+            });
+            await callbacks.onUpdate();
+            if (currentId) openPanel(currentId);
+          } catch (err) {
+            console.error("Failed to add ethnicity:", err);
+          }
+        },
+      }),
+    );
+  }
+
+  // --- Genetic Tests section ---
+  const geneticTestsSection = document.createElement("div");
+  geneticTestsSection.append(heading("Genetic Tests"));
+
+  const testList = document.createElement("div");
+  for (const test of data.genetic_tests ?? []) {
+    testList.append(buildGeneticTestItem(data.id, test, name));
+  }
+  geneticTestsSection.append(testList);
+
+  const addTestBtn = document.createElement("button");
+  addTestBtn.className = "event-add-btn";
+  addTestBtn.textContent = "+ Add Genetic Test";
+  addTestBtn.addEventListener("click", async () => {
+    callbacks.onBeforeMutation(`Add genetic test to ${name()}`);
+    try {
+      await callbacks.api(`/api/individuals/${data.id}/genetic-tests`, {
+        method: "POST",
+        body: JSON.stringify({ gene: "", result: null }),
+      });
+      await callbacks.onUpdate();
+      if (currentId) openPanel(currentId);
+    } catch (err) {
+      console.error("Failed to add genetic test:", err);
+    }
+  });
+  geneticTestsSection.append(addTestBtn);
+
+  // --- Treatments section ---
+  const treatmentsSection = document.createElement("div");
+  treatmentsSection.append(heading("Treatments"));
+
+  const treatmentList = document.createElement("div");
+  for (const t of data.treatments ?? []) {
+    treatmentList.append(buildTreatmentItem(data, t, name));
+  }
+  treatmentsSection.append(treatmentList);
+
+  // Add treatment popup (pick treatment type)
+  if (treatmentTypeCatalog.length > 0) {
+    treatmentsSection.append(
+      buildPopupPicker({
+        buttonLabel: "+ Add Treatment",
+        items: treatmentTypeCatalog,
+        groups: treatmentTypeCatalog,
+        searchPlaceholder: "Search treatments...",
+        onSelect: async (item) => {
+          callbacks.onBeforeMutation(`Add ${item.display_name || "treatment"} to ${name()}`);
+          try {
+            await callbacks.api(`/api/individuals/${data.id}/treatments`, {
+              method: "POST",
+              body: JSON.stringify({ treatment_type_id: item.id }),
+            });
+            await callbacks.onUpdate();
+            if (currentId) openPanel(currentId);
+          } catch (err) {
+            console.error("Failed to add treatment:", err);
+          }
+        },
+      }),
+    );
   }
 
   // --- Markers section ---
@@ -505,7 +710,6 @@ function buildDOM(data: IndividualData): void {
     nameSpan2.className = "marker-badge-name";
     nameSpan2.textContent = markerName;
 
-    // Inline editable alleles
     const allele1 = makeInput();
     allele1.className = "marker-allele-input";
     allele1.value = entry.allele_1;
@@ -561,7 +765,6 @@ function buildDOM(data: IndividualData): void {
   }
   markersSection.append(markerBadges);
 
-  // Add marker dropdown
   const unassignedMarkers = markerCatalog.filter((m) => !assignedMarkerIds.includes(m.id));
   if (unassignedMarkers.length > 0) {
     const addMarkerSel = makeSelect([
@@ -622,7 +825,455 @@ function buildDOM(data: IndividualData): void {
 
     eventEditor,
 
+    ethnicitySection,
     diseasesSection,
+    geneticTestsSection,
+    treatmentsSection,
     markersSection,
   );
+}
+
+// --- Popup picker (reusable for diseases, ethnicities, treatments) ---
+
+interface PopupPickerOptions {
+  buttonLabel: string;
+  items: { id: string; display_name: string; parent_id?: string | null }[];
+  groups: { id: string; display_name: string; parent_id?: string | null }[];
+  searchPlaceholder?: string;
+  renderItem?: (item: { id: string; display_name: string }) => DocumentFragment | HTMLElement;
+  onSelect: (item: { id: string; display_name: string }) => void;
+}
+
+function buildPopupPicker(opts: PopupPickerOptions): HTMLDivElement {
+  const anchor = document.createElement("div");
+  anchor.className = "popup-picker-anchor";
+
+  const btn = document.createElement("button");
+  btn.className = "event-add-btn";
+  btn.textContent = opts.buttonLabel;
+  anchor.append(btn);
+
+  let popup: HTMLDivElement | null = null;
+
+  const dismiss = () => {
+    if (popup) {
+      popup.remove();
+      popup = null;
+    }
+  };
+
+  btn.addEventListener("click", () => {
+    if (popup) { dismiss(); return; }
+    popup = document.createElement("div");
+    popup.className = "popup-picker";
+
+    const search = document.createElement("input");
+    search.className = "popup-picker-search";
+    search.placeholder = opts.searchPlaceholder ?? "Search...";
+    popup.append(search);
+
+    const listEl = document.createElement("div");
+    listEl.className = "popup-picker-list";
+    popup.append(listEl);
+
+    // Build grouped list
+    const parents = new Map<string, string>();
+    for (const g of opts.groups) {
+      if (!g.parent_id) parents.set(g.id, g.display_name);
+    }
+
+    const renderList = (filter: string) => {
+      listEl.innerHTML = "";
+      const lf = filter.toLowerCase();
+      const filtered = opts.items.filter((i) =>
+        !lf || i.display_name.toLowerCase().includes(lf),
+      );
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "popup-picker-empty";
+        empty.textContent = "No results";
+        listEl.append(empty);
+        return;
+      }
+
+      // Group items: parent items first, then children grouped under parents
+      const parentItems = filtered.filter((i) => !i.parent_id);
+      const childItems = filtered.filter((i) => i.parent_id);
+      const grouped = new Map<string, typeof filtered>();
+      for (const child of childItems) {
+        const key = child.parent_id!;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(child);
+      }
+
+      // Show ungrouped parents
+      for (const item of parentItems) {
+        // If this parent has children in the filtered list, show as group header
+        if (grouped.has(item.id)) {
+          const groupLabel = document.createElement("div");
+          groupLabel.className = "popup-picker-group";
+          groupLabel.textContent = item.display_name;
+          listEl.append(groupLabel);
+          for (const child of grouped.get(item.id)!) {
+            listEl.append(makePickerItem(child, opts, dismiss));
+          }
+          grouped.delete(item.id);
+        } else {
+          listEl.append(makePickerItem(item, opts, dismiss));
+        }
+      }
+
+      // Show remaining grouped children whose parent wasn't in filtered results
+      for (const [parentId, children] of grouped) {
+        const parentName = parents.get(parentId);
+        if (parentName) {
+          const groupLabel = document.createElement("div");
+          groupLabel.className = "popup-picker-group";
+          groupLabel.textContent = parentName;
+          listEl.append(groupLabel);
+        }
+        for (const child of children) {
+          listEl.append(makePickerItem(child, opts, dismiss));
+        }
+      }
+    };
+
+    search.addEventListener("input", () => renderList(search.value));
+    renderList("");
+    anchor.append(popup);
+    search.focus();
+
+    // Close on outside click
+    const onDocClick = (e: MouseEvent) => {
+      if (!anchor.contains(e.target as Node)) {
+        dismiss();
+        document.removeEventListener("click", onDocClick);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", onDocClick), 0);
+  });
+
+  return anchor;
+}
+
+function makePickerItem(
+  item: { id: string; display_name: string },
+  opts: PopupPickerOptions,
+  dismiss: () => void,
+): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "popup-picker-item";
+  if (opts.renderItem) {
+    row.append(opts.renderItem(item));
+  } else {
+    row.textContent = item.display_name || item.id;
+  }
+  row.addEventListener("click", () => {
+    dismiss();
+    opts.onSelect(item);
+  });
+  return row;
+}
+
+// --- Disease accordion item (expandable with laterality/site/tumor) ---
+
+function buildDiseaseItem(
+  data: IndividualData,
+  entry: IndividualDiseaseEntry,
+  cat: CatalogDisease | undefined,
+  name: () => string,
+): HTMLDivElement {
+  const item = document.createElement("div");
+  item.className = "panel-accordion-item";
+
+  // Header
+  const hdr = document.createElement("div");
+  hdr.className = "panel-accordion-header";
+  const hdrContent = document.createElement("span");
+  const dot = document.createElement("span");
+  dot.className = "disease-dot";
+  dot.style.background = cat?.color || "#999";
+  dot.style.marginRight = "6px";
+  dot.style.display = "inline-block";
+  hdrContent.append(dot);
+  hdrContent.append(document.createTextNode(cat?.display_name || entry.disease_id));
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "event-delete-btn";
+  deleteBtn.textContent = "\u00d7";
+  deleteBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    callbacks.onBeforeMutation(`Remove ${cat?.display_name || "disease"} from ${name()}`);
+    try {
+      await callbacks.api(`/api/individuals/${data.id}/diseases/${entry.disease_id}`, { method: "DELETE" });
+      await callbacks.onUpdate();
+      if (currentId) openPanel(currentId);
+    } catch (err) {
+      console.error("Failed to remove disease:", err);
+    }
+  });
+  hdr.append(hdrContent, deleteBtn);
+  hdr.addEventListener("click", () => item.classList.toggle("expanded"));
+  item.append(hdr);
+
+  // Body
+  const body = document.createElement("div");
+  body.className = "panel-accordion-body";
+
+  const patchDisease = async (fields: Record<string, unknown>) => {
+    try {
+      await callbacks.api(`/api/individuals/${data.id}/diseases/${entry.disease_id}`, {
+        method: "PATCH",
+        body: JSON.stringify(fields),
+      });
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Failed to update disease:", err);
+    }
+  };
+
+  const elLaterality = makeSelect(LATERALITY_OPTIONS);
+  elLaterality.value = entry.laterality ?? "";
+  elLaterality.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit laterality on ${name()}`);
+    patchDisease({ laterality: elLaterality.value || null });
+  });
+
+  const elSite = makeInput();
+  elSite.value = entry.site ?? "";
+  elSite.placeholder = "e.g. breast, ovary, colon";
+  elSite.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit disease site on ${name()}`);
+    patchDisease({ site: elSite.value });
+  });
+
+  // Tumor properties: ER, PR, HER2 as simple select fields
+  const tp = entry.tumor_properties ?? {};
+  const receptorOpts = [["", "(none)"], ["positive", "+"], ["negative", "-"], ["unknown", "?"]];
+  const elER = makeSelect(receptorOpts);
+  elER.value = (tp.er_status as string) ?? "";
+  elER.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit tumor properties on ${name()}`);
+    patchDisease({ tumor_properties: { ...tp, er_status: elER.value || null } });
+    tp.er_status = elER.value || null;
+  });
+  const elPR = makeSelect(receptorOpts);
+  elPR.value = (tp.pr_status as string) ?? "";
+  elPR.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit tumor properties on ${name()}`);
+    patchDisease({ tumor_properties: { ...tp, pr_status: elPR.value || null } });
+    tp.pr_status = elPR.value || null;
+  });
+  const elHER2 = makeSelect(receptorOpts);
+  elHER2.value = (tp.her2_status as string) ?? "";
+  elHER2.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit tumor properties on ${name()}`);
+    patchDisease({ tumor_properties: { ...tp, her2_status: elHER2.value || null } });
+    tp.her2_status = elHER2.value || null;
+  });
+
+  body.append(
+    makeField("Laterality", elLaterality),
+    makeField("Site", elSite),
+    makeField("ER status", elER),
+    makeField("PR status", elPR),
+    makeField("HER2 status", elHER2),
+  );
+  item.append(body);
+  return item;
+}
+
+// --- Genetic test accordion item ---
+
+function buildGeneticTestItem(
+  individualId: string,
+  test: IndividualGeneticTestEntry,
+  name: () => string,
+): HTMLDivElement {
+  const item = document.createElement("div");
+  item.className = "panel-accordion-item";
+
+  const hdr = document.createElement("div");
+  hdr.className = "panel-accordion-header";
+  const hdrLabel = document.createElement("span");
+  hdrLabel.textContent = test.gene || "Genetic Test";
+  if (test.result) hdrLabel.textContent += ` \u2014 ${test.result}`;
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "event-delete-btn";
+  deleteBtn.textContent = "\u00d7";
+  deleteBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    callbacks.onBeforeMutation(`Remove genetic test from ${name()}`);
+    try {
+      await callbacks.api(`/api/individuals/${individualId}/genetic-tests/${test.id}`, { method: "DELETE" });
+      await callbacks.onUpdate();
+      if (currentId) openPanel(currentId);
+    } catch (err) {
+      console.error("Failed to delete genetic test:", err);
+    }
+  });
+  hdr.append(hdrLabel, deleteBtn);
+  hdr.addEventListener("click", () => item.classList.toggle("expanded"));
+  item.append(hdr);
+
+  const body = document.createElement("div");
+  body.className = "panel-accordion-body";
+
+  const patchTest = async (fields: Record<string, unknown>) => {
+    try {
+      await callbacks.api(`/api/individuals/${individualId}/genetic-tests/${test.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(fields),
+      });
+      Object.assign(test, fields);
+      hdrLabel.textContent = test.gene || "Genetic Test";
+      if (test.result) hdrLabel.textContent += ` \u2014 ${test.result}`;
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Failed to update genetic test:", err);
+    }
+  };
+
+  const elGene = makeInput();
+  elGene.value = test.gene ?? "";
+  elGene.placeholder = "e.g. BRCA1, BRCA2, MLH1";
+  elGene.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit genetic test on ${name()}`);
+    patchTest({ gene: elGene.value });
+  });
+
+  const elResult = makeSelect(GENETIC_TEST_RESULT_OPTIONS);
+  elResult.value = test.result ?? "";
+  elResult.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit genetic test result on ${name()}`);
+    patchTest({ result: elResult.value || null });
+  });
+
+  const elMethod = makeInput();
+  elMethod.value = test.method ?? "";
+  elMethod.placeholder = "e.g. sequencing, MLPA";
+  elMethod.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit genetic test on ${name()}`);
+    patchTest({ method: elMethod.value });
+  });
+
+  const elDate = makeInput("date");
+  elDate.value = test.date ?? "";
+  elDate.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit genetic test date on ${name()}`);
+    patchTest({ date: elDate.value || null });
+  });
+
+  body.append(
+    makeField("Gene", elGene),
+    makeField("Result", elResult),
+    makeField("Method", elMethod),
+    makeField("Date", elDate),
+  );
+  item.append(body);
+  return item;
+}
+
+// --- Treatment accordion item ---
+
+function buildTreatmentItem(
+  data: IndividualData,
+  treatment: IndividualTreatmentEntry,
+  name: () => string,
+): HTMLDivElement {
+  const item = document.createElement("div");
+  item.className = "panel-accordion-item";
+
+  const ttCat = treatmentTypeCatalog.find((t) => t.id === treatment.treatment_type_id);
+  const ttName = ttCat?.display_name || "Treatment";
+
+  const hdr = document.createElement("div");
+  hdr.className = "panel-accordion-header";
+  const hdrLabel = document.createElement("span");
+  hdrLabel.textContent = ttName;
+  if (treatment.prophylactic) hdrLabel.textContent += " (prophylactic)";
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "event-delete-btn";
+  deleteBtn.textContent = "\u00d7";
+  deleteBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    callbacks.onBeforeMutation(`Remove ${ttName} from ${name()}`);
+    try {
+      await callbacks.api(`/api/individuals/${data.id}/treatments/${treatment.id}`, { method: "DELETE" });
+      await callbacks.onUpdate();
+      if (currentId) openPanel(currentId);
+    } catch (err) {
+      console.error("Failed to delete treatment:", err);
+    }
+  });
+  hdr.append(hdrLabel, deleteBtn);
+  hdr.addEventListener("click", () => item.classList.toggle("expanded"));
+  item.append(hdr);
+
+  const body = document.createElement("div");
+  body.className = "panel-accordion-body";
+
+  const patchTreatment = async (fields: Record<string, unknown>) => {
+    try {
+      await callbacks.api(`/api/individuals/${data.id}/treatments/${treatment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(fields),
+      });
+      Object.assign(treatment, fields);
+      await callbacks.onUpdate();
+    } catch (err) {
+      console.error("Failed to update treatment:", err);
+    }
+  };
+
+  const elLaterality = makeSelect(LATERALITY_OPTIONS);
+  elLaterality.value = treatment.laterality ?? "";
+  elLaterality.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit treatment on ${name()}`);
+    patchTreatment({ laterality: elLaterality.value || null });
+  });
+
+  const elProphylactic = makeInput("checkbox") as HTMLInputElement;
+  elProphylactic.checked = treatment.prophylactic ?? false;
+  elProphylactic.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit treatment on ${name()}`);
+    patchTreatment({ prophylactic: elProphylactic.checked });
+    hdrLabel.textContent = ttName + (elProphylactic.checked ? " (prophylactic)" : "");
+  });
+
+  // Disease link
+  const diseaseOptions: string[][] = [["", "(none)"]];
+  for (const d of data.diseases ?? []) {
+    const dc = diseaseCatalog.find((c) => c.id === d.disease_id);
+    diseaseOptions.push([d.disease_id, dc?.display_name || d.disease_id]);
+  }
+  const elDiseaseLink = makeSelect(diseaseOptions);
+  elDiseaseLink.value = treatment.disease_id ?? "";
+  elDiseaseLink.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit treatment on ${name()}`);
+    patchTreatment({ disease_id: elDiseaseLink.value || null });
+  });
+
+  const elStartDate = makeInput("date");
+  elStartDate.value = treatment.date ?? "";
+  elStartDate.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit treatment date on ${name()}`);
+    patchTreatment({ date: elStartDate.value || null });
+  });
+
+  const elEndDate = makeInput("date");
+  elEndDate.value = treatment.end_date ?? "";
+  elEndDate.addEventListener("change", () => {
+    callbacks.onBeforeMutation(`Edit treatment date on ${name()}`);
+    patchTreatment({ end_date: elEndDate.value || null });
+  });
+
+  body.append(
+    makeField("Laterality", elLaterality),
+    makeCheckboxRow("Prophylactic", elProphylactic),
+    makeField("For disease", elDiseaseLink),
+    makeField("Start date", elStartDate),
+    makeField("End date", elEndDate),
+  );
+  item.append(body);
+  return item;
 }

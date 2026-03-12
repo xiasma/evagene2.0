@@ -14,6 +14,9 @@ router = APIRouter(prefix="/api/diseases", tags=["diseases"])
 def create_disease(body: DiseaseCreate):
     return store.create_disease(
         display_name=body.display_name,
+        parent_id=body.parent_id,
+        icd10_code=body.icd10_code,
+        omim_id=body.omim_id,
         color=body.color,
         notes=body.notes,
         properties=body.properties,

@@ -563,3 +563,174 @@
 .sub-resource-section {
   margin-top: 6px;
 }
+
+/* --- Popup picker (used for Add Disease, Add Ethnicity, etc.) --- */
+
+.popup-picker-anchor {
+  position: relative;
+}
+
+.popup-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  max-height: 200px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.popup-picker-search {
+  padding: 6px 8px;
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-family: inherit;
+  font-size: 0.72rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  outline: none;
+  flex-shrink: 0;
+}
+
+.popup-picker-search::placeholder {
+  color: var(--color-text-subtle);
+}
+
+.popup-picker-list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.popup-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.popup-picker-item:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+.popup-picker-item .disease-dot {
+  flex-shrink: 0;
+}
+
+.popup-picker-group {
+  padding: 4px 8px 2px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-subtle);
+  pointer-events: none;
+}
+
+.popup-picker-empty {
+  padding: 8px;
+  font-size: 0.72rem;
+  color: var(--color-text-subtle);
+  text-align: center;
+}
+
+/* --- Ethnicity badge with proportion --- */
+
+.ethnicity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface-alt);
+  transition: border-color var(--duration-fast);
+}
+
+.ethnicity-badge:hover {
+  border-color: var(--color-border);
+}
+
+.ethnicity-proportion {
+  width: 36px;
+  padding: 2px 4px !important;
+  font-size: 0.68rem !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 4px !important;
+  background: var(--color-surface) !important;
+  color: var(--color-text);
+  font-family: inherit;
+  outline: none;
+  text-align: right;
+}
+
+.ethnicity-proportion:focus {
+  border-color: var(--color-accent) !important;
+}
+
+/* --- Accordion items for genetic tests / treatments --- */
+
+.panel-accordion-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 5px;
+  overflow: hidden;
+  transition: border-color var(--duration-fast);
+}
+
+.panel-accordion-item.expanded {
+  border-color: var(--color-accent);
+}
+
+.panel-accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: var(--color-surface-alt);
+  user-select: none;
+  transition: background var(--duration-fast);
+}
+
+.panel-accordion-header:hover {
+  background: var(--color-border-subtle);
+}
+
+.panel-accordion-header span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.panel-accordion-item.expanded .panel-accordion-header span {
+  color: var(--color-accent-text);
+}
+
+.panel-accordion-body {
+  display: none;
+  padding: 6px 10px 10px;
+}
+
+.panel-accordion-item.expanded .panel-accordion-body {
+  display: block;
+}
