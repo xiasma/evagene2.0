@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routers import (
     chromosomes, diseases, eggs, ethnicities, events, individuals, markers,
-    pedigrees, relationships, species, treatment_types,
+    pedigrees, relationships, risk, species, treatment_types,
 )
 
 app = FastAPI(title="Evagene", description="Pedigree management for clinical and research geneticists")
@@ -21,6 +21,7 @@ app.include_router(markers.router)
 app.include_router(diseases.router)
 app.include_router(ethnicities.router)
 app.include_router(treatment_types.router)
+app.include_router(risk.router)
 
 
 static_dir = Path(__file__).parent / "static"

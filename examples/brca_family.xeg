@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BRCAPRO Example: Hereditary Breast & Ovarian Cancer Family
+
+  Three-generation family with strong history of breast and ovarian cancer.
+  The proband (Sarah, age 42) is unaffected but has a mother and maternal
+  aunt with breast cancer, and a maternal grandmother with ovarian cancer.
+
+  Demonstrates: BRCAPRO risk analysis for BRCA1/BRCA2 carrier probability
+  and future breast/ovarian cancer risk.
+-->
+<Pedigree>
+  <StudyDiseases>
+    <StudyDisease>
+      <Guid>disease-breast</Guid>
+      <Name>Breast Cancer</Name>
+      <Colour><R>255</R><G>105</G><B>180</B></Colour>
+    </StudyDisease>
+    <StudyDisease>
+      <Guid>disease-ovarian</Guid>
+      <Name>Ovarian Cancer</Name>
+      <Colour><R>123</R><G>104</G><B>238</B></Colour>
+    </StudyDisease>
+  </StudyDiseases>
+
+  <Individuals>
+    <!-- Generation I (Grandparents) -->
+
+    <!-- Maternal Grandmother: Margaret — ovarian cancer at 58, died at 65 -->
+    <Individual>
+      <Guid>ind-margaret</Guid>
+      <Name>Margaret Wilson</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>200</X><Y>100</Y>
+      <Living>Dead</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Wilson</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Margaret</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>01/03/1940 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>15/06/1998 00:00:00</Date><Name>Ovarian cancer diagnosis</Name></Event>
+        <Event><Status>Death</Status><Date>20/11/2005 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-ovarian" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Maternal Grandfather: Robert — unaffected, age 88 -->
+    <Individual>
+      <Guid>ind-robert</Guid>
+      <Name>Robert Wilson</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>400</X><Y>100</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Wilson</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Robert</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>14/07/1937 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Paternal Grandmother: Dorothy — unaffected, age 85 -->
+    <Individual>
+      <Guid>ind-dorothy</Guid>
+      <Name>Dorothy Chen</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>700</X><Y>100</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Dorothy</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>22/09/1940 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Paternal Grandfather: William — unaffected, died at 78 -->
+    <Individual>
+      <Guid>ind-william</Guid>
+      <Name>William Chen</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>900</X><Y>100</Y>
+      <Living>Dead</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>William</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>05/01/1935 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Death</Status><Date>10/03/2013 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation II (Parents & Aunts/Uncles) -->
+
+    <!-- Mother: Linda — breast cancer at 45, alive at 64 -->
+    <Individual>
+      <Guid>ind-linda</Guid>
+      <Name>Linda Chen</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>200</X><Y>300</Y>
+      <Living>Alive</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Linda</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>12/05/1961 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>03/09/2006 00:00:00</Date><Name>Breast cancer diagnosis</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-breast" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Father: James — unaffected, age 66 -->
+    <Individual>
+      <Guid>ind-james</Guid>
+      <Name>James Chen</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>400</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>James</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>28/11/1959 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Maternal Aunt: Carol — breast cancer at 50, alive at 60 -->
+    <Individual>
+      <Guid>ind-carol</Guid>
+      <Name>Carol Taylor</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>600</X><Y>300</Y>
+      <Living>Alive</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Taylor</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Carol</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>19/08/1965 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>22/01/2016 00:00:00</Date><Name>Breast cancer diagnosis</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-breast" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Carol's husband: David — unaffected, age 62 -->
+    <Individual>
+      <Guid>ind-david</Guid>
+      <Name>David Taylor</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>800</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Taylor</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>David</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>03/04/1963 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation III (Proband & Siblings/Cousins) -->
+
+    <!-- PROBAND: Sarah — unaffected, age 42 -->
+    <Individual>
+      <Guid>ind-sarah</Guid>
+      <Name>Sarah Chen</Name>
+      <Sex>Female</Sex>
+      <Generation>2</Generation>
+      <X>200</X><Y>500</Y>
+      <Living>Alive</Living>
+      <Proband>1</Proband>
+      <ProbandText>P</ProbandText>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Sarah</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>15/10/1983 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Brother: Michael — unaffected, age 38 -->
+    <Individual>
+      <Guid>ind-michael</Guid>
+      <Name>Michael Chen</Name>
+      <Sex>Male</Sex>
+      <Generation>2</Generation>
+      <X>400</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Chen</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Michael</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>07/02/1988 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Cousin: Emma — unaffected, age 33 -->
+    <Individual>
+      <Guid>ind-emma</Guid>
+      <Name>Emma Taylor</Name>
+      <Sex>Female</Sex>
+      <Generation>2</Generation>
+      <X>700</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Taylor</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Emma</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>23/06/1992 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+  </Individuals>
+
+  <Marriages>
+    <!-- Margaret + Robert (maternal grandparents) -->
+    <Marriage>
+      <Guid>mar-margaret-robert</Guid>
+      <Spouse1Ref>ind-margaret</Spouse1Ref>
+      <Spouse2Ref>ind-robert</Spouse2Ref>
+    </Marriage>
+
+    <!-- Dorothy + William (paternal grandparents) -->
+    <Marriage>
+      <Guid>mar-dorothy-william</Guid>
+      <Spouse1Ref>ind-dorothy</Spouse1Ref>
+      <Spouse2Ref>ind-william</Spouse2Ref>
+    </Marriage>
+
+    <!-- Linda + James (parents) -->
+    <Marriage>
+      <Guid>mar-linda-james</Guid>
+      <Spouse1Ref>ind-linda</Spouse1Ref>
+      <Spouse2Ref>ind-james</Spouse2Ref>
+    </Marriage>
+
+    <!-- Carol + David (aunt & uncle) -->
+    <Marriage>
+      <Guid>mar-carol-david</Guid>
+      <Spouse1Ref>ind-carol</Spouse1Ref>
+      <Spouse2Ref>ind-david</Spouse2Ref>
+    </Marriage>
+  </Marriages>
+
+  <PregnancyLists>
+    <PregnancyList MarriageRef="mar-margaret-robert">
+      <Pregnancy><Guid>preg-linda</Guid><MarriageRef>mar-margaret-robert</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-carol</Guid><MarriageRef>mar-margaret-robert</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-dorothy-william">
+      <Pregnancy><Guid>preg-james</Guid><MarriageRef>mar-dorothy-william</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-linda-james">
+      <Pregnancy><Guid>preg-sarah</Guid><MarriageRef>mar-linda-james</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-michael</Guid><MarriageRef>mar-linda-james</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-carol-david">
+      <Pregnancy><Guid>preg-emma</Guid><MarriageRef>mar-carol-david</MarriageRef></Pregnancy>
+    </PregnancyList>
+  </PregnancyLists>
+
+  <EggLists>
+    <EggList><PregnancyRef>preg-linda</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-linda" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-carol</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-carol" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-james</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-james" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-sarah</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-sarah" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-michael</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-michael" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-emma</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-emma" /></Siblings></Egg>
+    </EggList>
+  </EggLists>
+</Pedigree>

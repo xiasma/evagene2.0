@@ -7,6 +7,7 @@ import { initRelationshipPanel, openRelationshipPanel, closeRelationshipPanel, f
 import { initEggPanel, openEggPanel, closeEggPanel } from "./panel-egg";
 import { initGeneticsPanel, openGeneticsPanel, closeGeneticsPanel } from "./panel-genetics";
 import { initDiseasePalette, openDiseasePalette, closeDiseasePalette, isDiseasePaletteOpen, refreshDiseasePalette } from "./disease-palette";
+import { initRiskPanel, openRiskPanel, closeRiskPanel, isRiskPanelOpen } from "./panel-risk";
 import { PanelCallbacks } from "./panel-utils";
 import { cssVar, toggleTheme, fontSettings, updateFontSettings, getCanvasFontWithSize } from "./theme";
 
@@ -104,6 +105,7 @@ app.innerHTML = `
       <button id="btn-disease-key" title="Toggle disease key">Key</button>
       <button id="btn-genetics" title="Genetics management">Genetics</button>
       <button id="btn-pedigree" title="Pedigree properties">Pedigree</button>
+      <button id="btn-risk" title="Risk analysis (BayesMendel)">Risk</button>
       <div class="font-settings">
         <button id="btn-font" title="Font settings">Font</button>
         <div id="font-popup" class="font-settings-popup">
@@ -165,6 +167,7 @@ const btnDiseases = document.getElementById("btn-diseases") as HTMLButtonElement
 const btnDiseaseKey = document.getElementById("btn-disease-key") as HTMLButtonElement;
 const btnGenetics = document.getElementById("btn-genetics") as HTMLButtonElement;
 const btnPedigree = document.getElementById("btn-pedigree") as HTMLButtonElement;
+const btnRisk = document.getElementById("btn-risk") as HTMLButtonElement;
 const btnFont = document.getElementById("btn-font") as HTMLButtonElement;
 const fontPopup = document.getElementById("font-popup") as HTMLDivElement;
 const btnTheme = document.getElementById("btn-theme") as HTMLButtonElement;
@@ -231,6 +234,7 @@ type PanelTarget =
   | { type: "egg"; id: string }
   | { type: "pedigree" }
   | { type: "genetics" }
+  | { type: "risk" }
   | null;
 
 let activePanelTarget: PanelTarget = null;
@@ -490,6 +494,7 @@ initPedigreePanel(panelCallbacks);
 initRelationshipPanel(panelCallbacks);
 initEggPanel(panelCallbacks);
 initGeneticsPanel(panelCallbacks);
+initRiskPanel(panelCallbacks);
 initDiseasePalette(panelCallbacks, {
   getSelectedIds: () => selectedIds,
   getSelectedIndividualId: () => selectedIndividualId,
@@ -507,6 +512,7 @@ function closeActivePanel(): void {
     case "egg": closeEggPanel(); break;
     case "pedigree": closePedigreePanel(); break;
     case "genetics": closeGeneticsPanel(); break;
+    case "risk": closeRiskPanel(); break;
   }
   activePanelTarget = null;
 }
@@ -531,6 +537,9 @@ async function openPanelFor(target: PanelTarget): Promise<void> {
       break;
     case "genetics":
       await openGeneticsPanel();
+      break;
+    case "risk":
+      if (pedigreeId) await openRiskPanel(pedigreeId);
       break;
   }
 }
@@ -4441,6 +4450,15 @@ btnGenetics.addEventListener("click", () => {
 
 btnPedigree.addEventListener("click", () => {
   openPanelFor({ type: "pedigree" });
+});
+
+btnRisk.addEventListener("click", () => {
+  if (isRiskPanelOpen()) {
+    closeRiskPanel();
+    activePanelTarget = null;
+  } else {
+    openPanelFor({ type: "risk" });
+  }
 });
 
 btnTheme.addEventListener("click", () => {

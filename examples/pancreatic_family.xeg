@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PancPRO Example: Familial Pancreatic Cancer Family
+
+  Three-generation family with pancreatic cancer in two relatives.
+  The proband (Tom, age 50) is unaffected but has a mother who died of
+  pancreatic cancer at 62 and a maternal uncle who was diagnosed at 58.
+
+  Demonstrates: PancPRO risk analysis for PALB2/PANC gene carrier
+  probability and future pancreatic cancer risk.
+-->
+<Pedigree>
+  <StudyDiseases>
+    <StudyDisease>
+      <Guid>disease-pancreatic</Guid>
+      <Name>Pancreatic Cancer</Name>
+      <Colour><R>75</R><G>0</G><B>130</B></Colour>
+    </StudyDisease>
+  </StudyDiseases>
+
+  <Individuals>
+    <!-- Generation I -->
+
+    <!-- Maternal Grandmother: Edith — unaffected, died at 79 -->
+    <Individual>
+      <Guid>ind-edith</Guid>
+      <Name>Edith Morgan</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>200</X><Y>100</Y>
+      <Living>Dead</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Morgan</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Edith</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>16/05/1930 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Death</Status><Date>03/02/2009 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Maternal Grandfather: Harold — unaffected, died at 84 -->
+    <Individual>
+      <Guid>ind-harold</Guid>
+      <Name>Harold Morgan</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>400</X><Y>100</Y>
+      <Living>Dead</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Morgan</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Harold</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>21/09/1928 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Death</Status><Date>14/11/2012 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Paternal Grandmother: Betty — unaffected, age 90 -->
+    <Individual>
+      <Guid>ind-betty</Guid>
+      <Name>Betty Harris</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>700</X><Y>100</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Betty</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>08/07/1935 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Paternal Grandfather: Frank — unaffected, died at 76 -->
+    <Individual>
+      <Guid>ind-frank</Guid>
+      <Name>Frank Harris</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>900</X><Y>100</Y>
+      <Living>Dead</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Frank</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>02/12/1932 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Death</Status><Date>19/04/2009 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation II -->
+
+    <!-- Mother: Patricia — pancreatic cancer at 58, died at 62 -->
+    <Individual>
+      <Guid>ind-patricia</Guid>
+      <Name>Patricia Harris</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>200</X><Y>300</Y>
+      <Living>Dead</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Patricia</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>10/03/1955 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>25/08/2013 00:00:00</Date><Name>Pancreatic cancer diagnosis</Name></Event>
+        <Event><Status>Death</Status><Date>07/01/2017 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-pancreatic" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Father: Richard — unaffected, age 72 -->
+    <Individual>
+      <Guid>ind-richard</Guid>
+      <Name>Richard Harris</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>400</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Richard</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>28/06/1953 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Maternal Uncle: Edward — pancreatic cancer at 58, alive at 64 -->
+    <Individual>
+      <Guid>ind-edward</Guid>
+      <Name>Edward Morgan</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>600</X><Y>300</Y>
+      <Living>Alive</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Morgan</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Edward</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>14/10/1961 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>06/11/2019 00:00:00</Date><Name>Pancreatic cancer diagnosis</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-pancreatic" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Edward's wife: Nancy — unaffected, age 62 -->
+    <Individual>
+      <Guid>ind-nancy</Guid>
+      <Name>Nancy Morgan</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>800</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Morgan</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Nancy</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>20/01/1964 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation III -->
+
+    <!-- PROBAND: Tom — unaffected, age 50 -->
+    <Individual>
+      <Guid>ind-tom</Guid>
+      <Name>Tom Harris</Name>
+      <Sex>Male</Sex>
+      <Generation>2</Generation>
+      <X>200</X><Y>500</Y>
+      <Living>Alive</Living>
+      <Proband>1</Proband>
+      <ProbandText>P</ProbandText>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Tom</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>11/04/1976 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Sister: Laura — unaffected, age 46 -->
+    <Individual>
+      <Guid>ind-laura</Guid>
+      <Name>Laura Harris</Name>
+      <Sex>Female</Sex>
+      <Generation>2</Generation>
+      <X>400</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Harris</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Laura</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>29/08/1979 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Cousin: Oliver — unaffected, age 30 -->
+    <Individual>
+      <Guid>ind-oliver</Guid>
+      <Name>Oliver Morgan</Name>
+      <Sex>Male</Sex>
+      <Generation>2</Generation>
+      <X>700</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Morgan</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Oliver</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>15/12/1995 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+  </Individuals>
+
+  <Marriages>
+    <Marriage>
+      <Guid>mar-edith-harold</Guid>
+      <Spouse1Ref>ind-edith</Spouse1Ref>
+      <Spouse2Ref>ind-harold</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-betty-frank</Guid>
+      <Spouse1Ref>ind-betty</Spouse1Ref>
+      <Spouse2Ref>ind-frank</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-patricia-richard</Guid>
+      <Spouse1Ref>ind-patricia</Spouse1Ref>
+      <Spouse2Ref>ind-richard</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-edward-nancy</Guid>
+      <Spouse1Ref>ind-edward</Spouse1Ref>
+      <Spouse2Ref>ind-nancy</Spouse2Ref>
+    </Marriage>
+  </Marriages>
+
+  <PregnancyLists>
+    <PregnancyList MarriageRef="mar-edith-harold">
+      <Pregnancy><Guid>preg-patricia</Guid><MarriageRef>mar-edith-harold</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-edward</Guid><MarriageRef>mar-edith-harold</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-betty-frank">
+      <Pregnancy><Guid>preg-richard</Guid><MarriageRef>mar-betty-frank</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-patricia-richard">
+      <Pregnancy><Guid>preg-tom</Guid><MarriageRef>mar-patricia-richard</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-laura</Guid><MarriageRef>mar-patricia-richard</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-edward-nancy">
+      <Pregnancy><Guid>preg-oliver</Guid><MarriageRef>mar-edward-nancy</MarriageRef></Pregnancy>
+    </PregnancyList>
+  </PregnancyLists>
+
+  <EggLists>
+    <EggList><PregnancyRef>preg-patricia</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-patricia" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-edward</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-edward" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-richard</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-richard" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-tom</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-tom" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-laura</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-laura" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-oliver</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-oliver" /></Siblings></Egg>
+    </EggList>
+  </EggLists>
+</Pedigree>

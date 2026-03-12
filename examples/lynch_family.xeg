@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MMRpro Example: Lynch Syndrome (Hereditary Colorectal/Endometrial Cancer) Family
+
+  Three-generation family with colorectal and endometrial cancer clustering.
+  The proband (Rachel, age 38) is unaffected but has a father with colon cancer
+  at 44, a paternal uncle with colon cancer at 48, and a paternal grandmother
+  with endometrial cancer at 52.
+
+  Demonstrates: MMRpro risk analysis for MLH1/MSH2/MSH6 carrier probability
+  and future colorectal/endometrial cancer risk.
+-->
+<Pedigree>
+  <StudyDiseases>
+    <StudyDisease>
+      <Guid>disease-colon</Guid>
+      <Name>Colon Cancer</Name>
+      <Colour><R>139</R><G>69</G><B>19</B></Colour>
+    </StudyDisease>
+    <StudyDisease>
+      <Guid>disease-endometrial</Guid>
+      <Name>Endometrial Cancer</Name>
+      <Colour><R>220</R><G>20</G><B>60</B></Colour>
+    </StudyDisease>
+  </StudyDiseases>
+
+  <Individuals>
+    <!-- Generation I -->
+
+    <!-- Paternal Grandmother: Rose — endometrial cancer at 52, died at 70 -->
+    <Individual>
+      <Guid>ind-rose</Guid>
+      <Name>Rose Adams</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>200</X><Y>100</Y>
+      <Living>Dead</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Rose</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>08/04/1938 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>14/10/1990 00:00:00</Date><Name>Endometrial cancer diagnosis</Name></Event>
+        <Event><Status>Death</Status><Date>22/06/2008 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-endometrial" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Paternal Grandfather: George — unaffected, died at 82 -->
+    <Individual>
+      <Guid>ind-george</Guid>
+      <Name>George Adams</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>400</X><Y>100</Y>
+      <Living>Dead</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>George</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>17/01/1935 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Death</Status><Date>05/09/2017 00:00:00</Date><Name>Death</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Maternal Grandmother: Helen — unaffected, age 84 -->
+    <Individual>
+      <Guid>ind-helen</Guid>
+      <Name>Helen Park</Name>
+      <Sex>Female</Sex>
+      <Generation>0</Generation>
+      <X>700</X><Y>100</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Park</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Helen</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>30/11/1941 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Maternal Grandfather: Thomas — unaffected, age 86 -->
+    <Individual>
+      <Guid>ind-thomas</Guid>
+      <Name>Thomas Park</Name>
+      <Sex>Male</Sex>
+      <Generation>0</Generation>
+      <X>900</X><Y>100</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Park</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Thomas</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>12/03/1940 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation II -->
+
+    <!-- Father: Peter — colon cancer at 44, alive at 62 -->
+    <Individual>
+      <Guid>ind-peter</Guid>
+      <Name>Peter Adams</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>200</X><Y>300</Y>
+      <Living>Alive</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Peter</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>25/07/1963 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>10/03/2008 00:00:00</Date><Name>Colon cancer diagnosis</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-colon" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Mother: Susan — unaffected, age 60 -->
+    <Individual>
+      <Guid>ind-susan</Guid>
+      <Name>Susan Adams</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>400</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Susan</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>04/12/1965 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Paternal Uncle: Mark — colon cancer at 48, alive at 58 -->
+    <Individual>
+      <Guid>ind-mark</Guid>
+      <Name>Mark Adams</Name>
+      <Sex>Male</Sex>
+      <Generation>1</Generation>
+      <X>600</X><Y>300</Y>
+      <Living>Alive</Living>
+      <Affection>Affected</Affection>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Mark</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>11/09/1967 00:00:00</Date><Name>Birth</Name></Event>
+        <Event><Status>Diagnosis</Status><Date>19/05/2016 00:00:00</Date><Name>Colon cancer diagnosis</Name></Event>
+      </Events>
+      <Manifestations>
+        <Manifestation StudyDiseaseRef="disease-colon" />
+      </Manifestations>
+    </Individual>
+
+    <!-- Mark's wife: Julia — unaffected, age 56 -->
+    <Individual>
+      <Guid>ind-julia</Guid>
+      <Name>Julia Adams</Name>
+      <Sex>Female</Sex>
+      <Generation>1</Generation>
+      <X>800</X><Y>300</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Julia</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>26/02/1970 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Generation III -->
+
+    <!-- PROBAND: Rachel — unaffected, age 38 -->
+    <Individual>
+      <Guid>ind-rachel</Guid>
+      <Name>Rachel Adams</Name>
+      <Sex>Female</Sex>
+      <Generation>2</Generation>
+      <X>200</X><Y>500</Y>
+      <Living>Alive</Living>
+      <Proband>1</Proband>
+      <ProbandText>P</ProbandText>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Rachel</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>09/01/1988 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Brother: Daniel — unaffected, age 34 -->
+    <Individual>
+      <Guid>ind-daniel</Guid>
+      <Name>Daniel Adams</Name>
+      <Sex>Male</Sex>
+      <Generation>2</Generation>
+      <X>400</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Daniel</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>18/06/1991 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+
+    <!-- Cousin: Alex — unaffected, age 28 -->
+    <Individual>
+      <Guid>ind-alex</Guid>
+      <Name>Alex Adams</Name>
+      <Sex>Male</Sex>
+      <Generation>2</Generation>
+      <X>700</X><Y>500</Y>
+      <Living>Alive</Living>
+      <DefinedFields>
+        <DefinedField><Name>Surname</Name><Value>Adams</Value></DefinedField>
+        <DefinedField><Name>Given names</Name><Value>Alex</Value></DefinedField>
+      </DefinedFields>
+      <Events>
+        <Event><Status>NaturalDelivery</Status><Date>05/08/1997 00:00:00</Date><Name>Birth</Name></Event>
+      </Events>
+    </Individual>
+  </Individuals>
+
+  <Marriages>
+    <Marriage>
+      <Guid>mar-rose-george</Guid>
+      <Spouse1Ref>ind-rose</Spouse1Ref>
+      <Spouse2Ref>ind-george</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-helen-thomas</Guid>
+      <Spouse1Ref>ind-helen</Spouse1Ref>
+      <Spouse2Ref>ind-thomas</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-peter-susan</Guid>
+      <Spouse1Ref>ind-peter</Spouse1Ref>
+      <Spouse2Ref>ind-susan</Spouse2Ref>
+    </Marriage>
+    <Marriage>
+      <Guid>mar-mark-julia</Guid>
+      <Spouse1Ref>ind-mark</Spouse1Ref>
+      <Spouse2Ref>ind-julia</Spouse2Ref>
+    </Marriage>
+  </Marriages>
+
+  <PregnancyLists>
+    <PregnancyList MarriageRef="mar-rose-george">
+      <Pregnancy><Guid>preg-peter</Guid><MarriageRef>mar-rose-george</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-mark</Guid><MarriageRef>mar-rose-george</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-helen-thomas">
+      <Pregnancy><Guid>preg-susan</Guid><MarriageRef>mar-helen-thomas</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-peter-susan">
+      <Pregnancy><Guid>preg-rachel</Guid><MarriageRef>mar-peter-susan</MarriageRef></Pregnancy>
+      <Pregnancy><Guid>preg-daniel</Guid><MarriageRef>mar-peter-susan</MarriageRef></Pregnancy>
+    </PregnancyList>
+    <PregnancyList MarriageRef="mar-mark-julia">
+      <Pregnancy><Guid>preg-alex</Guid><MarriageRef>mar-mark-julia</MarriageRef></Pregnancy>
+    </PregnancyList>
+  </PregnancyLists>
+
+  <EggLists>
+    <EggList><PregnancyRef>preg-peter</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-peter" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-mark</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-mark" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-susan</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-susan" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-rachel</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-rachel" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-daniel</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-daniel" /></Siblings></Egg>
+    </EggList>
+    <EggList><PregnancyRef>preg-alex</PregnancyRef>
+      <Egg><Siblings><Individual IndividualRef="ind-alex" /></Siblings></Egg>
+    </EggList>
+  </EggLists>
+</Pedigree>
